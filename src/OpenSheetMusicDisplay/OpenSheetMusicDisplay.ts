@@ -650,6 +650,12 @@ export class OpenSheetMusicDisplay {
         if (options.renderSingleHorizontalStaffline !== undefined) {
             this.rules.RenderSingleHorizontalStaffline = options.renderSingleHorizontalStaffline;
         }
+        if (options.rebaseSingleHorizontalStaffline !== undefined) {
+            this.rules.RebaseSingleHorizontalStaffline = options.rebaseSingleHorizontalStaffline;
+        }
+        if (options.singleHorizontalStafflineMarginY !== undefined) {
+            this.rules.SingleHorizontalStafflineMarginY = options.singleHorizontalStafflineMarginY;
+        }
         if (options.spacingFactorSoftmax !== undefined) {
             this.rules.SoftmaxFactorVexFlow = options.spacingFactorSoftmax;
         }
