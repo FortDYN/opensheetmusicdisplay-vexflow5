@@ -585,6 +585,9 @@ export class OpenSheetMusicDisplay {
             this.rules.PageBackgroundColor = undefined;
             this.rules.DarkModeEnabled = false;
         }
+        if (options.invertBrightnessForContrast !== undefined) {
+            this.rules.InvertBrightnessForContrast = options.invertBrightnessForContrast;
+        }
         if (options.defaultColorMusic) {
             this.rules.applyDefaultColorMusic(options.defaultColorMusic);
         }

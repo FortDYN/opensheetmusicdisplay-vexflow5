@@ -50,6 +50,11 @@ export interface IOSMDOptions {
     colorStemsLikeNoteheads?: boolean;
     /** Dark mode (black background, white notes). Simply sets defaultColorMusic and EngravingRules.PageBackgroundColor. */
     darkMode?: boolean;
+    /** When enabled with darkMode, inverts brightness (lightness) while preserving hue for contrast.
+     * This is useful when using CSS invert filter on the container.
+     * Colors from backend keep their hue (e.g., yellow stays yellow) but brightness is inverted
+     * so they appear contrasting in both light and dark modes. */
+    invertBrightnessForContrast?: boolean;
     /** Default color for all musical elements including key signature etc. Can be used for dark mode etc. Default undefined. */
     defaultColorMusic?: string;
     /** Default color for a note head (without stem). Default black (undefined).
