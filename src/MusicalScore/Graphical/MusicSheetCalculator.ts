@@ -1105,8 +1105,6 @@ export abstract class MusicSheetCalculator {
             }
             for (let idx2: number = 0, len2: number = graphicalMusicPage.MusicSystems.length; idx2 < len2; ++idx2) {
                 const musicSystem: MusicSystem = graphicalMusicPage.MusicSystems[idx2];
-                // let newPosition: PointF2D = new PointF2D(musicSystem.PositionAndShape.RelativePosition.x,
-                // musicSystem.PositionAndShape.RelativePosition.y - distance);
                 musicSystem.PositionAndShape.RelativePosition =
                     new PointF2D(musicSystem.PositionAndShape.RelativePosition.x, musicSystem.PositionAndShape.RelativePosition.y - distance);
             }
@@ -1131,6 +1129,10 @@ export abstract class MusicSheetCalculator {
 
             // calculate TopBottom Borders for all elements recursively
             graphicalMusicPage.PositionAndShape.calculateTopBottomBorders(); // this is where top bottom borders were originally calculated (only once)
+        }
+        if (this.rules.RenderSingleHorizontalStaffline && this.rules.RebaseSingleHorizontalStaffline) {
+            log.info("[MusicSheetCalculator] About to call rebaseSingleHorizontalStaffline");
+            this.rebaseSingleHorizontalStaffline();
         }
     }
 
@@ -4179,6 +4181,46 @@ export abstract class MusicSheetCalculator {
                     }
                 }
             }
+        }
+    }
+
+    private rebaseSingleHorizontalStaffline(): void {
+        const pages: GraphicalMusicPage[] = this.graphicalMusicSheet.MusicPages;
+        if (!pages || pages.length === 0) {
+            log.info("[rebaseSingleHorizontalStaffline] No pages found");
+            return;
+        }
+        const firstSystem: MusicSystem | undefined = pages[0].MusicSystems[0];
+        if (!firstSystem || !firstSystem.StaffLines || firstSystem.StaffLines.length === 0) {
+            log.info("[rebaseSingleHorizontalStaffline] No first system or staff lines found");
+            return;
+        }
+
+        const margin: number = this.rules.SingleHorizontalStafflineMarginY || 0;
+
+        // Calculate the absolute y-position of the first staff line
+        const firstStaffLine: StaffLine = firstSystem.StaffLines[0];
+        const systemY: number = firstSystem.PositionAndShape.RelativePosition.y;
+        const staffLineY: number = firstStaffLine.PositionAndShape.RelativePosition.y;
+        const systemBorderTop: number = firstSystem.PositionAndShape.BorderTop;
+        const firstStaffLineAbsoluteY: number = systemY + staffLineY;
+
+        // The offset needed to move the first staff line to the target position (margin)
+        const offset: number = firstStaffLineAbsoluteY - margin;
+
+        log.info(`[rebaseSingleHorizontalStaffline] System Y: ${systemY}, StaffLine Y: ${staffLineY}, BorderTop: ${systemBorderTop}`);
+        log.info(`[rebaseSingleHorizontalStaffline] First staff line absolute Y: ${firstStaffLineAbsoluteY}`);
+        log.info(`[rebaseSingleHorizontalStaffline] Margin: ${margin}, Offset to apply: ${offset}`);
+
+        for (const page of pages) {
+            for (let i: number = 0; i < page.MusicSystems.length; i++) {
+                const system: MusicSystem = page.MusicSystems[i];
+                const oldY: number = system.PositionAndShape.RelativePosition.y;
+                system.PositionAndShape.RelativePosition.y -= offset;
+                const newY: number = system.PositionAndShape.RelativePosition.y;
+                log.info(`[rebaseSingleHorizontalStaffline] System ${i}: Y changed from ${oldY} to ${newY}`);
+            }
+            page.PositionAndShape.calculateTopBottomBorders();
         }
     }
 }

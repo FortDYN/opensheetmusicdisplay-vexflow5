@@ -99,6 +99,45 @@ export class SkyBottomLineCalculator {
 
         const highestBottomLine: number = Math.min(...this.mBottomLine);
         this.mBottomLine = this.mBottomLine.map(v => (v - highestBottomLine) / unitInPixels + this.StaffLineParent.BottomLineOffset);
+        log.info("[SkyBottomLineCalculator] SkyLine and BottomLine calculated.");
+        this.applySkyBottomClamps();
+    }
+
+    private applySkyBottomClamps(): void {
+        const topBase: number = this.StaffLineParent.TopLineOffset;
+        const bottomBase: number = this.StaffLineParent.BottomLineOffset;
+        const allowDistortion: boolean = this.mRules.SkyBottomDistortionAllowed;
+        const maxSkyDeviation: number = this.mRules.MaxSkylineFactor;
+        const maxBottomDeviation: number = this.mRules.MaxBottomlineFactor;
+
+        const clampSky: (val: number) => number = (val: number): number => {
+            if (!isFinite(val)) {
+                return topBase;
+            }
+            if (!allowDistortion) {
+                return topBase;
+            }
+            if (Number.isFinite(maxSkyDeviation)) {
+                return Math.max(val, topBase - Math.abs(maxSkyDeviation));
+            }
+            return val;
+        };
+
+        const clampBottom: (val: number) => number = (val: number): number => {
+            if (!isFinite(val)) {
+                return bottomBase;
+            }
+            if (!allowDistortion) {
+                return bottomBase;
+            }
+            if (Number.isFinite(maxBottomDeviation)) {
+                return Math.min(val, bottomBase + Math.abs(maxBottomDeviation));
+            }
+            return val;
+        };
+
+        this.mSkyLine = this.mSkyLine.map(clampSky);
+        this.mBottomLine = this.mBottomLine.map(clampBottom);
     }
 
     /**

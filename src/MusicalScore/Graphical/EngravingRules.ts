@@ -61,6 +61,10 @@ export class EngravingRules {
     public InstrumentLabelTextHeight: number;
     public MinimumDistanceBetweenSystems: number;
     public MinSkyBottomDistBetweenSystems: number;
+    /** Optional clamp for skyline/bottomline driven spacing */
+    public SkyBottomDistortionAllowed: boolean;
+    public MaxSkylineFactor: number;
+    public MaxBottomlineFactor: number;
     public LastSystemMaxScalingFactor: number;
     public StaffDistance: number;
     public BetweenStaffDistance: number;
@@ -571,6 +575,8 @@ export class EngravingRules {
     public DarkModeEnabled: boolean;
     public UsePageBackgroundColorForTabNotes: boolean;
     public RenderSingleHorizontalStaffline: boolean;
+    public RebaseSingleHorizontalStaffline: boolean;
+    public SingleHorizontalStafflineMarginY: number;
     public RestoreCursorAfterRerender: boolean;
     public StretchLastSystemLine: boolean;
     /** Ignore brackets - e.g. `( )` - that were supposed to be around a note,
@@ -659,6 +665,9 @@ export class EngravingRules {
         this.MinimumStaffLineDistance = 7.0;
         this.MinSkyBottomDistBetweenStaves = 1.0; // default. compacttight mode sets it to 1.0 (as well).
         this.SnapStafflinesToCrispPixels = true;
+        this.SkyBottomDistortionAllowed = true;
+        this.MaxSkylineFactor = Number.POSITIVE_INFINITY;
+        this.MaxBottomlineFactor = Number.POSITIVE_INFINITY;
 
         // System Sizing and Label Variables
         this.StaffHeight = 4.0;
@@ -1064,6 +1073,8 @@ export class EngravingRules {
         this.DarkModeEnabled = false;
         this.UsePageBackgroundColorForTabNotes = true;
         this.RenderSingleHorizontalStaffline = false;
+        this.RebaseSingleHorizontalStaffline = false;
+        this.SingleHorizontalStafflineMarginY = 0;
         this.SpacingBetweenTextLines = 0;
 
         this.NoteToGraphicalNoteMap = new Dictionary<number, GraphicalNote>();
