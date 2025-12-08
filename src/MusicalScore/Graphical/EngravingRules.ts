@@ -503,6 +503,8 @@ export class EngravingRules {
     public PageBackgroundColor: string; // vexflow-color-string (#FFFFFF). Default undefined/transparent.
     /** Whether dark mode is enabled. This is read-only, to set this, please use osmd.setOptions({darkMode: true}). */
     public DarkModeEnabled: boolean;
+    /** Whether to invert brightness (lightness) for contrast preservation in dark mode. */
+    public InvertBrightnessForContrast: boolean;
     public UsePageBackgroundColorForTabNotes: boolean;
     public RenderSingleHorizontalStaffline: boolean;
     public RebaseSingleHorizontalStaffline: boolean;
@@ -958,6 +960,7 @@ export class EngravingRules {
         this.PageFormat = PageFormat.UndefinedPageFormat; // default: undefined / 'infinite' height page, using the canvas'/container's width and height
         this.PageBackgroundColor = undefined; // default: transparent. half-transparent white: #FFFFFF88"
         this.DarkModeEnabled = false;
+        this.InvertBrightnessForContrast = false;
         this.UsePageBackgroundColorForTabNotes = true;
         this.RenderSingleHorizontalStaffline = false;
         this.RebaseSingleHorizontalStaffline = false;

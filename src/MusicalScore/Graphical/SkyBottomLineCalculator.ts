@@ -98,7 +98,7 @@ export class SkyBottomLineCalculator {
 
         const highestBottomLine: number = Math.min(...this.mBottomLine);
         this.mBottomLine = this.mBottomLine.map(v => (v - highestBottomLine) / unitInPixels + this.StaffLineParent.BottomLineOffset);
-        console.info("[SkyBottomLineCalculator] SkyLine and BottomLine calculated.");
+        log.info("[SkyBottomLineCalculator] SkyLine and BottomLine calculated.");
         this.applySkyBottomClamps();
     }
 

@@ -3876,10 +3876,10 @@ export abstract class MusicSheetCalculator {
         const margin: number = this.rules.SingleHorizontalStafflineMarginY || 0;
 
         // Calculate the absolute y-position of the first staff line
-        const firstStaffLine = firstSystem.StaffLines[0];
-        const systemY = firstSystem.PositionAndShape.RelativePosition.y;
-        const staffLineY = firstStaffLine.PositionAndShape.RelativePosition.y;
-        const systemBorderTop = firstSystem.PositionAndShape.BorderTop;
+        const firstStaffLine: StaffLine = firstSystem.StaffLines[0];
+        const systemY: number = firstSystem.PositionAndShape.RelativePosition.y;
+        const staffLineY: number = firstStaffLine.PositionAndShape.RelativePosition.y;
+        const systemBorderTop: number = firstSystem.PositionAndShape.BorderTop;
         const firstStaffLineAbsoluteY: number = systemY + staffLineY;
 
         // The offset needed to move the first staff line to the target position (margin)
@@ -3890,11 +3890,11 @@ export abstract class MusicSheetCalculator {
         log.info(`[rebaseSingleHorizontalStaffline] Margin: ${margin}, Offset to apply: ${offset}`);
 
         for (const page of pages) {
-            for (let i = 0; i < page.MusicSystems.length; i++) {
-                const system = page.MusicSystems[i];
-                const oldY = system.PositionAndShape.RelativePosition.y;
+            for (let i: number = 0; i < page.MusicSystems.length; i++) {
+                const system: MusicSystem = page.MusicSystems[i];
+                const oldY: number = system.PositionAndShape.RelativePosition.y;
                 system.PositionAndShape.RelativePosition.y -= offset;
-                const newY = system.PositionAndShape.RelativePosition.y;
+                const newY: number = system.PositionAndShape.RelativePosition.y;
                 log.info(`[rebaseSingleHorizontalStaffline] System ${i}: Y changed from ${oldY} to ${newY}`);
             }
             page.PositionAndShape.calculateTopBottomBorders();

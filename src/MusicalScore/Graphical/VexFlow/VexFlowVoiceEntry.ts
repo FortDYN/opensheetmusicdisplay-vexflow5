@@ -10,6 +10,94 @@ import { ColoringModes } from "../../../Common/Enums/ColoringModes";
 import { GraphicalNote } from "../GraphicalNote";
 import { EngravingRules } from "../EngravingRules";
 
+/** Helper function to invert brightness while preserving hue for contrast preservation */
+function invertColorForContrast(colorHex: string): string {
+    if (!colorHex || colorHex === "#000000" || colorHex === "#FFFFFF") {
+        return colorHex; // Don't invert pure black or white
+    }
+
+    // Handle transparent colors
+    if (colorHex.length === 9 && colorHex.startsWith("#")) {
+        const rgb: string = colorHex.substring(1, 7);
+        const alpha: string = colorHex.substring(7, 9);
+        const inverted: string = invertBrightnessRgbHex(rgb);
+        return "#" + inverted + alpha;
+    } else if (colorHex.length === 7 && colorHex.startsWith("#")) {
+        const rgb: string = colorHex.substring(1);
+        return "#" + invertBrightnessRgbHex(rgb);
+    }
+
+    return colorHex;
+}
+
+function invertBrightnessRgbHex(rgbHex: string): string {
+    // Parse RGB
+    const r: number = parseInt(rgbHex.substring(0, 2), 16) / 255;
+    const g: number = parseInt(rgbHex.substring(2, 4), 16) / 255;
+    const b: number = parseInt(rgbHex.substring(4, 6), 16) / 255;
+
+    // Convert RGB to HSL
+    const max: number = Math.max(r, g, b);
+    const min: number = Math.min(r, g, b);
+    const l: number = (max + min) / 2;
+    let h: number = 0;
+    let s: number = 0;
+
+    if (max !== min) {
+        const d: number = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+
+        if (max === r) {
+            h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+        } else if (max === g) {
+            h = ((b - r) / d + 2) / 6;
+        } else {
+            h = ((r - g) / d + 4) / 6;
+        }
+    }
+
+    // Invert lightness only
+    const lInverted: number = 1 - l;
+
+    // Convert HSL back to RGB
+    const hslToRgb: (h: number, s: number, l: number) => [number, number, number] = (h, s, l) => {
+        let rOut: number;
+        let gOut: number;
+        let bOut: number;
+
+        if (s === 0) {
+            rOut = gOut = bOut = l;
+        } else {
+            const hue2rgb: (p: number, q: number, t: number) => number = (p, q, t) => {
+                if (t < 0) { t += 1; }
+                if (t > 1) { t -= 1; }
+                if (t < 1 / 6) { return p + (q - p) * 6 * t; }
+                if (t < 1 / 2) { return q; }
+                if (t < 2 / 3) { return p + (q - p) * (2 / 3 - t) * 6; }
+                return p;
+            };
+
+            const q: number = l < 0.5 ? l * (1 + s) : l + s - l * s;
+            const p: number = 2 * l - q;
+            rOut = hue2rgb(p, q, h + 1 / 3);
+            gOut = hue2rgb(p, q, h);
+            bOut = hue2rgb(p, q, h - 1 / 3);
+        }
+
+        return [rOut, gOut, bOut];
+    };
+
+    const [rNew, gNew, bNew]: [number, number, number] = hslToRgb(h, s, lInverted);
+
+    // Convert back to hex
+    const toHex: (n: number) => string = (n) => {
+        const hex: string = Math.round(n * 255).toString(16);
+        return hex.padStart(2, "0");
+    };
+
+    return toHex(rNew) + toHex(gNew) + toHex(bNew);
+}
+
 export class VexFlowVoiceEntry extends GraphicalVoiceEntry {
     private mVexFlowStaveNote: VF.StemmableNote;
     public vfGhostNotes: VF.GhostNote[]; // sometimes we need multiple ghost notes instead of just one note (vfStaveNote).
@@ -112,6 +200,10 @@ export class VexFlowVoiceEntry extends GraphicalVoiceEntry {
                 }
             }
             if (noteheadColor && note.sourceNote.PrintObject) {
+                // Apply brightness inversion for contrast if enabled
+                if (this.rules.InvertBrightnessForContrast && this.rules.DarkModeEnabled) {
+                    noteheadColor = invertColorForContrast(noteheadColor);
+                }
                 note.sourceNote.NoteheadColorCurrentlyRendered = noteheadColor;
             } else if (!noteheadColor) {
                 continue;
@@ -182,6 +274,12 @@ export class VexFlowVoiceEntry extends GraphicalVoiceEntry {
         }
         if (stemTransparent) {
             stemColor = transparentColor;
+        }
+        // Apply brightness inversion for stem contrast if enabled
+        // But skip if ColorStemsLikeNoteheads is true, since stemColor brightness is already inverted (it came from noteheadColor)
+        const stemBrightnessAlreadyInverted: boolean = this.rules.ColorStemsLikeNoteheads && !!noteheadColor;
+        if (this.rules.InvertBrightnessForContrast && this.rules.DarkModeEnabled && stemColor && stemColor !== transparentColor && !stemBrightnessAlreadyInverted) {
+            stemColor = invertColorForContrast(stemColor);
         }
         const stemStyle: Object = { fillStyle: stemColor, strokeStyle: stemColor };
 
