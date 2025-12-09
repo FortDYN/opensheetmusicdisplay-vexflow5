@@ -61,28 +61,28 @@ function invertBrightnessRgbHex(rgbHex: string): string {
     const lInverted: number = 1 - l;
 
     // Convert HSL back to RGB
-    const hslToRgb: (_h: number, _s: number, _l: number) => [number, number, number] = (_h, _s, _l) => {
+    const hslToRgb: (hIn: number, sIn: number, lIn: number) => [number, number, number] = (hIn, sIn, lIn) => {
         let rOut: number;
         let gOut: number;
         let bOut: number;
 
-        if (_s === 0) {
-            rOut = gOut = bOut = _l;
+        if (sIn === 0) {
+            rOut = gOut = bOut = lIn;
         } else {
-            const hue2rgb: (_p: number, _q: number, _t: number) => number = (_p, _q, _t) => {
-                if (_t < 0) { _t += 1; }
-                if (_t > 1) { _t -= 1; }
-                if (_t < 1 / 6) { return _p + (_q - _p) * 6 * _t; }
-                if (_t < 1 / 2) { return _q; }
-                if (_t < 2 / 3) { return _p + (_q - _p) * (2 / 3 - _t) * 6; }
-                return _p;
+            const hue2rgb: (pHue: number, qHue: number, t: number) => number = (pHue, qHue, t) => {
+                if (t < 0) { t += 1; }
+                if (t > 1) { t -= 1; }
+                if (t < 1 / 6) { return pHue + (qHue - pHue) * 6 * t; }
+                if (t < 1 / 2) { return qHue; }
+                if (t < 2 / 3) { return pHue + (qHue - pHue) * (2 / 3 - t) * 6; }
+                return pHue;
             };
 
-            const q: number = _l < 0.5 ? _l * (1 + _s) : _l + _s - _l * _s;
-            const p: number = 2 * _l - q;
-            rOut = hue2rgb(p, q, h + 1 / 3);
-            gOut = hue2rgb(p, q, h);
-            bOut = hue2rgb(p, q, h - 1 / 3);
+            const q: number = lIn < 0.5 ? lIn * (1 + sIn) : lIn + sIn - lIn * sIn;
+            const p: number = 2 * lIn - q;
+            rOut = hue2rgb(p, q, hIn + 1 / 3);
+            gOut = hue2rgb(p, q, hIn);
+            bOut = hue2rgb(p, q, hIn - 1 / 3);
         }
 
         return [rOut, gOut, bOut];
@@ -288,9 +288,13 @@ export class VexFlowVoiceEntry extends GraphicalVoiceEntry {
         }
         // Apply brightness inversion for stem contrast if enabled
         // But skip if ColorStemsLikeNoteheads is true, since stemColor brightness is already inverted (it came from noteheadColor)
-        const stemBrightnessAlreadyInverted: boolean = this.rules.ColorStemsLikeNoteheads && !!noteheadColor;
-        if (this.rules.InvertBrightnessForContrast && this.rules.DarkModeEnabled
-            && stemColor && stemColor !== transparentColor && !stemBrightnessAlreadyInverted) {
+        const stemBrightnessAlreadyInverted: boolean =
+            this.rules.ColorStemsLikeNoteheads && !!noteheadColor;
+        if (this.rules.InvertBrightnessForContrast
+            && this.rules.DarkModeEnabled
+            && stemColor
+            && stemColor !== transparentColor
+            && !stemBrightnessAlreadyInverted) {
             stemColor = invertColorForContrast(stemColor);
         }
         const stemStyle: Object = { fillStyle: stemColor, strokeStyle: stemColor };
