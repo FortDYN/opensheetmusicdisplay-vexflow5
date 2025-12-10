@@ -27,7 +27,7 @@ export class KeyInstruction extends AbstractNotationInstruction {
     public isTransposedBy: number = 0;
 
     public static copy(keyInstruction: KeyInstruction): KeyInstruction {
-        const newKeyInstruction: KeyInstruction = new KeyInstruction(keyInstruction.parent, keyInstruction.Key, keyInstruction.Mode);
+        const newKeyInstruction: KeyInstruction = new KeyInstruction(keyInstruction?.parent, keyInstruction.Key, keyInstruction.Mode);
         // note that newKeyInstruction.keyTypeOriginal is set incorrectly in the constructor, but we fix that here:
         newKeyInstruction.keyTypeOriginal = keyInstruction.keyTypeOriginal;
         return newKeyInstruction;
