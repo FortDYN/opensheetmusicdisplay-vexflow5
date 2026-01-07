@@ -579,6 +579,8 @@ export class EngravingRules {
     public RenderSingleHorizontalStaffline: boolean;
     public RebaseSingleHorizontalStaffline: boolean;
     public SingleHorizontalStafflineMarginY: number;
+    /** Optional predefined relative y-positions (in units) for each staff line within a system. */
+    public StaffLineRelativeYPositions: number[] | undefined;
     public RestoreCursorAfterRerender: boolean;
     public StretchLastSystemLine: boolean;
     /** Ignore brackets - e.g. `( )` - that were supposed to be around a note,
@@ -1078,6 +1080,7 @@ export class EngravingRules {
         this.RenderSingleHorizontalStaffline = false;
         this.RebaseSingleHorizontalStaffline = false;
         this.SingleHorizontalStafflineMarginY = 0;
+        this.StaffLineRelativeYPositions = undefined;
         this.SpacingBetweenTextLines = 0;
 
         this.NoteToGraphicalNoteMap = new Dictionary<number, GraphicalNote>();
