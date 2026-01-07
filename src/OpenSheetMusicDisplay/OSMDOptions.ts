@@ -181,6 +181,8 @@ export interface IOSMDOptions {
     renderSingleHorizontalStaffline?: boolean;
     rebaseSingleHorizontalStaffline?: boolean;
     singleHorizontalStafflineMarginY?: number;
+    /** When provided, fixes the relative y-positions (in engraving units) for each staff line within a system. */
+    staffLineRelativeYPositions?: number[];
     /** Whether to begin a new system ("line break") when given in XML ('new-system="yes"').
      *  Default false, because OSMD does its own layout that will do line breaks interactively
      *  at different measures. So this option may result in a system break after a single measure in a system.

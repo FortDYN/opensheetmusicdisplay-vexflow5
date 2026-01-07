@@ -339,6 +339,19 @@ export class MusicSystemBuilder {
                 }
             }
         }
+        const predefinedStaffYPositions: number[] | undefined = this.rules.StaffLineRelativeYPositions;
+        const usePredefinedStaffYPositions: boolean = Array.isArray(predefinedStaffYPositions) &&
+            predefinedStaffYPositions.length >= staffList.length;
+        if (usePredefinedStaffYPositions) {
+            let maxY: number = 0;
+            for (let i: number = 0; i < staffList.length; i++) {
+                const yOffset: number = predefinedStaffYPositions[i];
+                this.addStaffLineToMusicSystem(musicSystem, yOffset, staffList[i]);
+                maxY = Math.max(maxY, yOffset + this.rules.StaffHeight);
+            }
+            boundingBox.BorderBottom = maxY;
+            return;
+        }
         let yOffsetSum: number = 0;
         for (let i: number = 0; i < staffList.length; i++) {
             this.addStaffLineToMusicSystem(musicSystem, yOffsetSum, staffList[i]);
@@ -1077,6 +1090,16 @@ export class MusicSystemBuilder {
      * @param musicSystem
      */
     protected optimizeDistanceBetweenStaffLines(musicSystem: MusicSystem): void {
+        const predefinedStaffYPositions: number[] | undefined = this.rules.StaffLineRelativeYPositions;
+        const usePredefinedStaffYPositions: boolean = Array.isArray(predefinedStaffYPositions) &&
+            predefinedStaffYPositions.length >= musicSystem.StaffLines.length;
+        if (usePredefinedStaffYPositions) {
+            const predefinedFirst: StaffLine = musicSystem.StaffLines[0];
+            musicSystem.PositionAndShape.BorderTop = predefinedFirst.PositionAndShape.RelativePosition.y + predefinedFirst.PositionAndShape.BorderTop;
+            const predefinedLast: StaffLine = musicSystem.StaffLines[musicSystem.StaffLines.length - 1];
+            musicSystem.PositionAndShape.BorderBottom = predefinedLast.PositionAndShape.RelativePosition.y + predefinedLast.PositionAndShape.BorderBottom;
+            return;
+        }
         // don't perform any y-spacing in case of a StaffEntryLink (in both StaffLines)
         if (!musicSystem.checkStaffEntriesForStaffEntryLink()) {
             for (let i: number = 0; i < musicSystem.StaffLines.length - 1; i++) {

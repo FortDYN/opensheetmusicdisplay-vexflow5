@@ -659,6 +659,9 @@ export class OpenSheetMusicDisplay {
         if (options.singleHorizontalStafflineMarginY !== undefined) {
             this.rules.SingleHorizontalStafflineMarginY = options.singleHorizontalStafflineMarginY;
         }
+        if (options.staffLineRelativeYPositions !== undefined) {
+            this.rules.StaffLineRelativeYPositions = options.staffLineRelativeYPositions;
+        }
         if (options.spacingFactorSoftmax !== undefined) {
             this.rules.SoftmaxFactorVexFlow = options.spacingFactorSoftmax;
         }
