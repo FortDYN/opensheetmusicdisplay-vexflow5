@@ -2097,9 +2097,9 @@ export class VexFlowMusicSheetCalculator extends MusicSheetCalculator {
 
     vfOctaveShift.PositionAndShape.Size.width = stopX - startX;
     const textBracket: VF.TextBracket = vfOctaveShift.getTextBracket();
-    // VF5: Element.font returns CSS string, not object. Use fontInfo.size (number | string)
-    // or fontSizeInPoints (always number) to get numeric point size.
+    // VF5: Element.font returns CSS string, not object. Use fontSizeInPoints (always number).
     const fontSize: number = textBracket.fontSizeInPoints / 10;
+    const octaveShiftYOffset: number = Math.max(0, this.rules.OctaveShiftYOffset);
 
     if ((<any>textBracket).position === VF.TextBracketPosition.TOP) {
       // Use snapshot of the original SkyLine so that sequential octave shifts on the same
@@ -2117,8 +2117,9 @@ export class VexFlowMusicSheetCalculator extends MusicSheetCalculator {
       if (headroom === Infinity) {
         return;
       }
-      (textBracket.start.getStave().options as any).topTextPosition = Math.abs(headroom);
-      parentStaffline.SkyBottomLineCalculator.updateSkyLineInRange(startX, stopX, headroom - fontSize * 2);
+      const topTextDistance: number = Math.max(Math.abs(headroom), octaveShiftYOffset);
+      (textBracket.start.getStave().options as any).topTextPosition = topTextDistance;
+      parentStaffline.SkyBottomLineCalculator.updateSkyLineInRange(startX, stopX, -topTextDistance - fontSize * 2);
       vfOctaveShift.PositionAndShape.BorderTop = -(fontSize * 2);
       vfOctaveShift.PositionAndShape.Size.height = fontSize * 2;
     } else {
@@ -2135,9 +2136,10 @@ export class VexFlowMusicSheetCalculator extends MusicSheetCalculator {
       if (footroom === -Infinity) {
         return;
       }
-      (textBracket.start.getStave().options as any).bottomTextPosition = footroom;
+      const bottomTextDistance: number = Math.max(footroom, octaveShiftYOffset);
+      (textBracket.start.getStave().options as any).bottomTextPosition = bottomTextDistance;
       //Vexflow positions top vs. bottom text in a slightly inconsistent way it seems
-      parentStaffline.SkyBottomLineCalculator.updateBottomLineInRange(startX, stopX, footroom + fontSize * 1.5);
+      parentStaffline.SkyBottomLineCalculator.updateBottomLineInRange(startX, stopX, bottomTextDistance + fontSize * 1.5);
       vfOctaveShift.PositionAndShape.BorderBottom = fontSize * 1.5;
       vfOctaveShift.PositionAndShape.Size.height = fontSize * 1.5;
     }
@@ -2664,7 +2666,6 @@ export class VexFlowMusicSheetCalculator extends MusicSheetCalculator {
       }
     }
   }
-
   protected override harmonizeVoltaHeights(): void {
     interface VoltaEntry {
       measure: VexFlowMeasure;

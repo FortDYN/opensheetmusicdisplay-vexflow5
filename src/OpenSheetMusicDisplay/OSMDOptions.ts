@@ -183,6 +183,8 @@ export interface IOSMDOptions {
     singleHorizontalStafflineMarginY?: number;
     /** When provided, fixes the relative y-positions (in engraving units) for each staff line within a system. */
     staffLineRelativeYPositions?: number[];
+    /** Minimum distance in staff lines to keep octave shift brackets away from the staff. */
+    octaveShiftYOffset?: number;
     /** Whether to begin a new system ("line break") when given in XML ('new-system="yes"').
      *  Default false, because OSMD does its own layout that will do line breaks interactively
      *  at different measures. So this option may result in a system break after a single measure in a system.
