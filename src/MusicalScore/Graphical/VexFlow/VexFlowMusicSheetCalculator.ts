@@ -1460,22 +1460,25 @@ export class VexFlowMusicSheetCalculator extends MusicSheetCalculator {
     vfOctaveShift.PositionAndShape.Size.width = stopX - startX;
     const textBracket: VF.TextBracket = vfOctaveShift.getTextBracket();
     const fontSize: number = (textBracket as any).font.size / 10;
+    const octaveShiftYOffset: number = Math.max(0, this.rules.OctaveShiftYOffset);
 
     if ((<any>textBracket).position === VF.TextBracket.Positions.TOP) {
       const headroom: number = Math.ceil(parentStaffline.SkyBottomLineCalculator.getSkyLineMinInRange(startX, stopX));
       if (headroom === Infinity) { // will cause Vexflow error
         return;
       }
-      (textBracket.start.getStave().options as any).top_text_position = Math.abs(headroom);
-      parentStaffline.SkyBottomLineCalculator.updateSkyLineInRange(startX, stopX, headroom - fontSize * 2);
+      const topTextDistance: number = Math.max(Math.abs(headroom), octaveShiftYOffset);
+      (textBracket.start.getStave().options as any).top_text_position = topTextDistance;
+      parentStaffline.SkyBottomLineCalculator.updateSkyLineInRange(startX, stopX, -topTextDistance - fontSize * 2);
     } else {
       const footroom: number = parentStaffline.SkyBottomLineCalculator.getBottomLineMaxInRange(startX, stopX);
       if (footroom === Infinity) { // will cause Vexflow error
         return;
       }
-      (textBracket.start.getStave().options as any).bottom_text_position = footroom;
+      const bottomTextDistance: number = Math.max(footroom, octaveShiftYOffset);
+      (textBracket.start.getStave().options as any).bottom_text_position = bottomTextDistance;
       //Vexflow positions top vs. bottom text in a slightly inconsistent way it seems
-      parentStaffline.SkyBottomLineCalculator.updateBottomLineInRange(startX, stopX, footroom + fontSize * 1.5);
+      parentStaffline.SkyBottomLineCalculator.updateBottomLineInRange(startX, stopX, bottomTextDistance + fontSize * 1.5);
     }
   }
 
@@ -1953,4 +1956,3 @@ export class VexFlowMusicSheetCalculator extends MusicSheetCalculator {
     }
   }
 }
-

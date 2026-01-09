@@ -367,6 +367,8 @@ export class EngravingRules {
     public RepeatEndStartPadding: number;
     public OctaveShiftLineWidth: number;
     public OctaveShiftVerticalLineLength: number;
+    /** Minimum vertical distance (in staff lines) between the staff and octave shift markings. */
+    public OctaveShiftYOffset: number;
     public OctaveShiftOnWholeMeasureNoteUntilEndOfMeasure: boolean;
     public GraceLineWidth: number;
     public MinimumStaffLineDistance: number;
@@ -854,6 +856,7 @@ export class EngravingRules {
         this.RepeatEndStartPadding = 2.0; // set to 0.0 to restore old padding/width with :||: measures
         this.OctaveShiftLineWidth = 0.12;
         this.OctaveShiftVerticalLineLength = EngravingRules.unit;
+        this.OctaveShiftYOffset = 0;
         this.OctaveShiftOnWholeMeasureNoteUntilEndOfMeasure = false;
         this.GraceLineWidth = this.StaffLineWidth * this.GraceNoteScalingFactor;
 

@@ -487,6 +487,9 @@ export class OpenSheetMusicDisplay {
         if (options.colorStemsLikeNoteheads !== undefined) {
             this.rules.ColorStemsLikeNoteheads = options.colorStemsLikeNoteheads;
         }
+        if (options.octaveShiftYOffset !== undefined) {
+            this.rules.OctaveShiftYOffset = options.octaveShiftYOffset;
+        }
         if (options.disableCursor) {
             this.drawingParameters.drawCursors = false;
         }
