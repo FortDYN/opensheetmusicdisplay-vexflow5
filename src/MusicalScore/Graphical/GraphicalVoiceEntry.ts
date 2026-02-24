@@ -51,7 +51,7 @@ export class GraphicalVoiceEntry extends GraphicalObject {
      */
     public sortForVexflow(): GraphicalNote[] {
         this.notes.sort((a, b) => {
-            return (a.sourceNote.Pitch?.getHalfTone() ?? 0) - (b.sourceNote.Pitch.getHalfTone() ?? 0);
+            return (a.sourceNote.Pitch?.getHalfTone() ?? 0) - (b.sourceNote.Pitch?.getHalfTone() ?? 0);
         });
         return this.notes;
     }
