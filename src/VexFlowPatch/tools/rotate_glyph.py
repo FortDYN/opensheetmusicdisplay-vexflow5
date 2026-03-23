@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Rotate a VexFlow glyph by degrees (clockwise by default). Writes to src/VexFlowPatch/vexflow_font.js."""
+
 """Usage:
   python src/VexFlowPatch/tools/rotate_glyph.py glyph degrees [ccw]
   #ccw = counter-clockwise
@@ -24,16 +25,16 @@ def _format_num(value: float) -> str:
     return f"{value:.6f}".rstrip("0").rstrip(".")
 
 
-def _rotate_point(x: float, y: float, radians: float) -> Tuple[float, float]:
+def _rotate_point(x: float, y: float, radians: float) -> tuple[float, float]:
     cos_a = math.cos(radians)
     sin_a = math.sin(radians)
     return (x * cos_a - y * sin_a, x * sin_a + y * cos_a)
 
 
-def _rotate_outline(outline: str, radians: float) -> Tuple[str, List[float]]:
+def _rotate_outline(outline: str, radians: float) -> tuple[str, list[float]]:
     tokens = outline.split()
     out = []
-    xs: List[float] = []
+    xs: list[float] = []
     i = 0
     while i < len(tokens):
         tok = tokens[i]
@@ -115,12 +116,8 @@ def rotate_glyph(font_path: Path, glyph: str, degrees: float, clockwise: bool) -
 
 
 def main() -> int:
-    default_font = (
-        Path(__file__).resolve().parent.parent / "src" / "fonts" / "vexflow_font.js"
-    )
-    parser = argparse.ArgumentParser(
-        description="Rotate a VexFlow glyph by degrees (clockwise by default)."
-    )
+    default_font = Path(__file__).resolve().parent.parent / "src" / "fonts" / "vexflow_font.js"
+    parser = argparse.ArgumentParser(description="Rotate a VexFlow glyph by degrees (clockwise by default).")
     parser.add_argument("glyph", help="Glyph name, e.g. v9a")
     parser.add_argument("degrees", type=float, help="Rotation degrees")
     parser.add_argument(
@@ -148,9 +145,7 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
-    print(
-        f"Rotated {args.glyph} by {args.degrees} degrees ({args.direction}) in {args.font}"
-    )
+    print(f"Rotated {args.glyph} by {args.degrees} degrees ({args.direction}) in {args.font}")
     return 0
 
 

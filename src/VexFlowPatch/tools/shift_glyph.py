@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Shift a VexFlow glyph by font units. Writes to src/VexFlowPatch/vexflow_font.js."""
+
 """Usage:
   python src/VexFlowPatch/tools/shift_glyph.py glyph x [y]
 
@@ -100,12 +101,8 @@ def shift_glyph(font_path: Path, glyph: str, dx: float, dy: float) -> None:
 
 
 def main() -> int:
-    default_font = (
-        Path(__file__).resolve().parent.parent / "src" / "fonts" / "vexflow_font.js"
-    )
-    parser = argparse.ArgumentParser(
-        description="Shift a VexFlow glyph by font units."
-    )
+    default_font = Path(__file__).resolve().parent.parent / "src" / "fonts" / "vexflow_font.js"
+    parser = argparse.ArgumentParser(description="Shift a VexFlow glyph by font units.")
     parser.add_argument("glyph", help="Glyph name, e.g. v9a")
     parser.add_argument("dx", type=float, help="Horizontal shift in font units")
     parser.add_argument(
@@ -133,9 +130,7 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
-    print(
-        f"Shifted {args.glyph} by dx={args.dx}, dy={args.dy} units in {args.font}"
-    )
+    print(f"Shifted {args.glyph} by dx={args.dx}, dy={args.dy} units in {args.font}")
     return 0
 
 
