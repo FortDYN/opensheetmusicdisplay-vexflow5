@@ -144,14 +144,15 @@ export class MusicSystemBuilder {
             const currentMeasureNumberInSystem: number = this.currentSystemParams.systemMeasures.length;
             const labelWidth: number = this.currentSystemParams.maxLabelLength > 0
                 ? this.currentSystemParams.maxLabelLength + this.rules.SystemLabelsRightMargin : 0;
-            const measureFitsInSystem: boolean =
+            const singleLine: boolean = this.rules.RenderSingleHorizontalStaffline;
+            const measureFitsInSystem: boolean = singleLine ||
                 this.currentSystemParams.currentWidth + totalMeasureWidth + nextMeasureBeginInstructionWidth + labelWidth < systemMaxWidth;
-            const doXmlPageBreak: boolean = this.rules.NewPageAtXMLNewPageAttribute && sourceMeasure.printNewPageXml;
+            const doXmlPageBreak: boolean = !singleLine && this.rules.NewPageAtXMLNewPageAttribute && sourceMeasure.printNewPageXml;
             const impliedSystemBreak: boolean = doXmlPageBreak || // also create new system if doing page break
-                (this.rules.NewSystemAtXMLNewPageAttribute && sourceMeasure.printNewPageXml);
+                (!singleLine && this.rules.NewSystemAtXMLNewPageAttribute && sourceMeasure.printNewPageXml);
             const doXmlLineBreak: boolean = impliedSystemBreak ||
-                (this.rules.NewSystemAtXMLNewSystemAttribute && sourceMeasure.printNewSystemXml) ||
-                currentMeasureNumberInSystem === this.rules.RenderXMeasuresPerLineAkaSystem && currentMeasureNumberInSystem > 0;
+                (!singleLine && this.rules.NewSystemAtXMLNewSystemAttribute && sourceMeasure.printNewSystemXml) ||
+                (!singleLine && currentMeasureNumberInSystem === this.rules.RenderXMeasuresPerLineAkaSystem && currentMeasureNumberInSystem > 0);
             if (isSystemStartMeasure || (measureFitsInSystem && !doXmlLineBreak)) {
                 this.addMeasureToSystem(
                     graphicalMeasures, measureStartLine, measureEndLine, totalMeasureWidth,
