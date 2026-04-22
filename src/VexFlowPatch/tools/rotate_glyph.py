@@ -16,7 +16,6 @@ import math
 import re
 import sys
 from pathlib import Path
-from typing import List, Tuple
 
 
 def _format_num(value: float) -> str:
