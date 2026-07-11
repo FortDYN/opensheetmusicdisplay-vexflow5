@@ -25,6 +25,7 @@ import { MusicPartManagerIterator } from "../MusicalScore/MusicParts/MusicPartMa
 import { ITransposeCalculator } from "../MusicalScore/Interfaces/ITransposeCalculator";
 import { NoteEnum } from "../Common/DataObjects/Pitch";
 import { TemposCalculator } from "../MusicalScore/ScoreIO/MusicSymbolModules/TemposCalculator";
+import * as VF from "vexflow";
 
 /**
  * The main class and control point of OpenSheetMusicDisplay.<br>
@@ -105,7 +106,7 @@ export class OpenSheetMusicDisplay {
      *   or the string content of a .xml/.mxl file, or a file blob.
      * @param tempTitle is used as the title for the piece if there is no title in the XML.
      */
-    public load(content: string | Document | Blob, tempTitle: string = "Untitled Score"): Promise<{}> {
+    public async load(content: string | Document | Blob, tempTitle: string = "Untitled Score"): Promise<{}> {
         // Warning! This function is asynchronous! No error handling is done here.
         this.reset();
         const self: OpenSheetMusicDisplay = this;
@@ -203,10 +204,13 @@ export class OpenSheetMusicDisplay {
         // }
         log.info(`[OSMD] Loaded sheet ${this.sheet.TitleString} successfully.`);
 
+        // Ensure vexflow fonts are loaded before creating graphical sheet (SVG needs font data)
+        await VF.VexFlow.loadFonts();
+
         this.needBackendUpdate = true;
         this.updateGraphic();
 
-        return Promise.resolve({});
+        return {};
     }
 
     /**
