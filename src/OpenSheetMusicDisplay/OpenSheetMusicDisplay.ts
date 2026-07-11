@@ -206,6 +206,14 @@ export class OpenSheetMusicDisplay {
 
         // Ensure vexflow fonts are loaded before creating graphical sheet (SVG needs font data)
         await VF.VexFlow.loadFonts();
+        // Inject CSS @font-face for SVG text rendering — FontFace API alone is insufficient.
+        for (const [fontName, dataUri] of VF.Font.loadedFontData) {
+            const cleanUri: string = dataUri.replace(";charset=utf-8", "");
+            const style: HTMLStyleElement = document.createElement("style");
+            style.textContent =
+                `@font-face { font-family: "${fontName}"; src: url("${cleanUri}") format("woff2"); font-display: block; }`;
+            document.head.appendChild(style);
+        }
 
         this.needBackendUpdate = true;
         this.updateGraphic();
