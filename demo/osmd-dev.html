@@ -1,0 +1,1910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>OSMD Jianpu Development Demo</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; background: #f5f5f5; }
+    .section { background: white; margin: 16px 0; padding: 16px 20px; border-radius: 8px;
+               box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    h1 { color: #222; }
+    h2 { color: #333; border-bottom: 2px solid #ddd; padding-bottom: 6px; margin-top: 0; }
+    h3 { color: #555; margin-bottom: 4px; }
+    .err { color: #c00; font-family: monospace; padding: 8px; background: #fee; border-radius: 4px; }
+    svg { display: block; }
+    /* Tab navigation */
+    .tabs { display: flex; gap: 4px; margin-bottom: 0; }
+    .tab-btn { padding: 10px 24px; border: 1px solid #ccc; border-bottom: none; background: #e8e8e8;
+               cursor: pointer; border-radius: 8px 8px 0 0; font-size: 14px; color: #555; }
+    .tab-btn.active { background: white; color: #222; font-weight: bold; }
+    .tab-content { display: none; background: white; padding: 16px 20px; border-radius: 0 8px 8px 8px;
+                   box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .tab-content.active { display: block; }
+  </style>
+</head>
+<body>
+  <h1>OSMD Jianpu Development Demo</h1>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="tab1" onclick="switchTab('tab1')">乐谱组合</button>
+    <button class="tab-btn" data-tab="tab2" onclick="switchTab('tab2')">简谱符号渲染</button>
+  </div>
+
+  <div id="tab1" class="tab-content active">
+    <div class="section"><h2>1. Jianpu 单纯旋律</h2><div id="t1s1"></div></div>
+    <div class="section"><h2>2. Jianpu 旋律 + 歌词</h2><div id="t1s2"></div></div>
+    <div class="section"><h2>3. Jianpu 旋律 + 歌词 + 和弦名</h2><div id="t1s3"></div></div>
+    <div class="section"><h2>4. 五线谱</h2><div id="t1s4"></div></div>
+    <div class="section"><h2>5. 五线谱 + 简谱</h2><div id="t1s5"></div></div>
+    <div class="section"><h2>6. 五线谱 + 简谱 + 歌词</h2><div id="t1s6"></div></div>
+    <div class="section"><h2>7. 吉他谱 TabStave</h2><div id="t1s7"></div></div>
+    <div class="section"><h2>8. 吉他谱 TabStave + 指法图</h2><div id="t1s8"></div></div>
+    <div class="section"><h2>9. 吉他谱 TabStave + 简谱</h2><div id="t1s9"></div></div>
+    <div class="section"><h2>10. 吉他谱 TabStave + 简谱 + 指法图</h2><div id="t1s10"></div></div>
+  </div>
+
+  <div id="tab2" class="tab-content">
+    <div class="section"><h2>1. 时值渲染</h2><div id="t2s1"></div></div>
+    <div class="section"><h2>2. 八度渲染</h2><div id="t2s2"></div></div>
+    <div class="section"><h2>3. 符号渲染</h2><div id="t2s3"></div></div>
+  </div>
+
+  <script src="../external/vexflow/build/cjs/vexflow-debug.js?v=20260724i"></script>
+  <script src="../build/opensheetmusicdisplay.js?v=20260724i"></script>
+  <script>
+  (function () {
+    'use strict';
+    const VF = VexFlow;
+    const OSMD = opensheetmusicdisplay;
+    const NE = OSMD.NoteEnum;
+    const AE = OSMD.AccidentalEnum;
+    const NT = OSMD.NoteType;
+    const KE = OSMD.KeyEnum;
+
+    // ── NoteEnum ↔ letter index ──────────────────────────────────
+    const ne2letter = { 0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6 };
+    const letter2ne = [0, 2, 4, 5, 7, 9, 11];
+
+    // ── NoteType → VexFlow duration string ────────────────────────
+    const nt2vf = {};
+    nt2vf[NT._32nd] = '32';
+    nt2vf[NT._16th] = '16';
+    nt2vf[NT.EIGTH] = '8';
+    nt2vf[NT.QUARTER] = 'q';
+    nt2vf[NT.HALF] = 'h';
+    nt2vf[NT.WHOLE] = 'w';
+
+    // ── Tonic letter index from key signature ────────────────────
+    function getTonicLetterIndex(key, mode) {
+      const base = (mode === KE.minor) ? 5 : 0; // A for minor, C for major
+      if (key >= 0) return (base + key * 4) % 7;
+      return (base + Math.abs(key) * 3) % 7;
+    }
+
+    // ── Accidental mapping ───────────────────────────────────────
+    function accidentalToVF(acc) {
+      switch (acc) {
+        case AE.SHARP: return '#';
+        case AE.FLAT: return 'b';
+        case AE.NATURAL: return 'n';
+        case AE.DOUBLESHARP: return '##';
+        case AE.DOUBLEFLAT: return 'bb';
+        default: return null;
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  MusicXML Generation
+    // ══════════════════════════════════════════════════════════════
+
+    function noteXml(step, alter, octave, type, dots, lyric, extra) {
+      const dur = { 'whole': 48, 'half': 24, 'quarter': 12, 'eighth': 6, '16th': 3 }[type] * (dots ? 1.5 : 1);
+      let s = '        <note>\n';
+      s += `          <pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ''}<octave>${octave}</octave></pitch>\n`;
+      s += `          <duration>${dur}</duration>\n          <type>${type}</type>\n`;
+      for (let i = 0; i < dots; i++) s += '          <dot/>\n';
+      if (extra) s += extra;
+      if (lyric !== undefined) s += `          <lyric><text>${lyric}</text></lyric>\n`;
+      s += '        </note>\n';
+      return s;
+    }
+
+    function measureXml(num, notesXml, attrs) {
+      let s = `      <measure number="${num}">\n`;
+      if (attrs) s += attrs;
+      s += notesXml;
+      s += '      </measure>\n';
+      return s;
+    }
+
+    function generateOdeToJoyXML(withLyrics) {
+      const L = withLyrics !== false;
+      const attrs = '        <attributes>\n          <divisions>12</divisions>\n'
+        + '          <key><fifths>0</fifths></key>\n'
+        + '          <time><beats>4</beats><beat-type>4</beat-type></time>\n'
+        + '          <clef><sign>G</sign><line>2</line></clef>\n        </attributes>\n';
+      const M = (notes) => notes.map(n => noteXml(...n)).join('');
+
+      const measures = [
+        [['E',0,4,'quarter',0, L?'欢':undefined], ['E',0,4,'quarter',0, L?'乐':undefined],
+         ['F',0,4,'quarter',0, L?'女':undefined], ['G',0,4,'quarter',0, L?'神':undefined]],
+        [['G',0,4,'quarter',0, L?'圣':undefined], ['F',0,4,'quarter',0, L?'洁':undefined],
+         ['E',0,4,'quarter',0, L?'美':undefined], ['D',0,4,'quarter',0, L?'丽':undefined]],
+        [['C',0,4,'quarter',0, L?'灿':undefined], ['C',0,4,'quarter',0, L?'烂':undefined],
+         ['D',0,4,'quarter',0, L?'光':undefined], ['E',0,4,'quarter',0, L?'芒':undefined]],
+        [['E',0,4,'quarter',1, L?'照':undefined], ['D',0,4,'eighth',0, L?'大':undefined],
+         ['D',0,4,'half',0, L?'地':undefined]],
+        [['E',0,4,'quarter',0, L?'我':undefined], ['E',0,4,'quarter',0, L?'们':undefined],
+         ['F',0,4,'quarter',0, L?'心':undefined], ['G',0,4,'quarter',0, L?'中':undefined]],
+        [['G',0,4,'quarter',0, L?'充':undefined], ['F',0,4,'quarter',0, L?'满':undefined],
+         ['E',0,4,'quarter',0, L?'热':undefined], ['D',0,4,'quarter',0, L?'情':undefined]],
+        [['C',0,4,'quarter',0, L?'来':undefined], ['C',0,4,'quarter',0, L?'到':undefined],
+         ['D',0,4,'quarter',0, L?'你':undefined], ['E',0,4,'quarter',0, L?'的':undefined]],
+        [['D',0,4,'quarter',1, L?'圣':undefined], ['C',0,4,'eighth',0, L?'殿':undefined],
+         ['C',0,4,'half',0, L?'里':undefined]],
+      ];
+
+      let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<score-partwise version="3.1">\n'
+        + '  <part-list>\n    <score-part id="P1"><part-name>Ode to Joy</part-name></score-part>\n  </part-list>\n'
+        + '  <part id="P1">\n';
+      for (let i = 0; i < measures.length; i++) {
+        xml += measureXml(i + 1, M(measures[i]), i === 0 ? attrs : '');
+      }
+      xml += '  </part>\n</score-partwise>\n';
+      return xml;
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  XML Parsing
+    // ══════════════════════════════════════════════════════════════
+
+    function parseXML(xmlString, title) {
+      const doc = new DOMParser().parseFromString(xmlString, 'text/xml');
+      const partwise = doc.querySelector('score-partwise');
+      if (!partwise) throw new Error('No score-partwise element found');
+      const score = new OSMD.IXmlElement(partwise);
+      const reader = new OSMD.MusicSheetReader();
+      const sheet = reader.createMusicSheet(score, title || 'Untitled');
+      if (!sheet) throw new Error('Failed to create MusicSheet');
+      return sheet;
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Adapter: MusicSheet → Jianpu rendering data
+    // ══════════════════════════════════════════════════════════════
+
+    function sheetToJianpu(sheet, digitFontSize) {
+      digitFontSize = digitFontSize || 14;
+      // Find key instruction
+      let keyInstr = null;
+      for (const sm of sheet.SourceMeasures) {
+        const first = sm.FirstInstructionsStaffEntries;
+        if (first && first[0] && first[0].Instructions) {
+          for (const instr of first[0].Instructions) {
+            if (instr instanceof OSMD.KeyInstruction) { keyInstr = instr; break; }
+          }
+        }
+        if (keyInstr) break;
+      }
+      const keyVal = keyInstr ? keyInstr.Key : 0;
+      const modeVal = keyInstr ? keyInstr.Mode : KE.major;
+      const tonicLetter = getTonicLetterIndex(keyVal, modeVal);
+      const tonicNE = letter2ne[tonicLetter];
+      const tonicHT = tonicNE + 48; // OSMD internal: C4 (xml octave 4) → halfTone 48
+
+      const noteMap = new Map(); // OSMD Note → first JianpuNote (digit)
+      const allMeasures = [];
+      const allTies = []; // {firstNote, lastNote, tie}
+
+      for (const sm of sheet.SourceMeasures) {
+        const ts = sm.ActiveTimeSignature;
+        const numBeats = ts ? ts.Numerator : 4;
+        const beatValue = ts ? ts.Denominator : 4;
+
+        const notes = [];
+        const beams = [];
+        const tuplets = [];
+        const lyrics = []; // {text, x, noteIndex}
+        const beamMap = new Map();
+        const tupletMap = new Map();
+
+        for (const container of sm.VerticalSourceStaffEntryContainers) {
+          for (const staffEntry of container.StaffEntries) {
+            for (const ve of staffEntry.VoiceEntries) {
+              // Lyrics
+              if (ve.LyricsEntries) {
+                try {
+                  ve.LyricsEntries.forEach((key, entry) => {
+                    if (entry && entry.Text) {
+                      lyrics.push({ text: entry.Text, noteIndex: notes.length });
+                    }
+                  });
+                } catch (e) { /* ignore */ }
+              }
+
+              for (const note of ve.Notes) {
+                // Skip grace notes
+                if (note.NoteTuplet && note.NoteTuplet.Notes.length > 0 && ve.GraceVoiceEntries && ve.GraceVoiceEntries.length > 0) continue;
+
+                const isRest = note.isRest();
+                const pitch = note.Pitch;
+                let scaleDegree = 1, octave = 4;
+
+                if (!isRest && pitch) {
+                  const noteLetter = ne2letter[pitch.FundamentalNote];
+                  scaleDegree = ((noteLetter - tonicLetter + 7) % 7) + 1;
+                  const noteHT = pitch.getHalfTone();
+                  const octaveDiff = Math.trunc((noteHT - tonicHT) / 12);
+                  octave = 4 + octaveDiff;
+                }
+
+                // Duration mapping
+                const noteType = note.NoteTypeXml;
+                const dots = note.DotsXml || 0;
+                const beats = note.Length.RealValue * beatValue;
+                const isLong = beats >= 2; // half or longer
+                let vfDur, dashCount, addDot;
+
+                if (isLong) {
+                  vfDur = 'q';
+                  dashCount = Math.round(beats) - 1;
+                  addDot = false;
+                } else {
+                  // OSMD has a typo "eigth" in NoteTypeXmlValues, so <type>eighth</type>
+                  // parses as UNDEFINED(0). Fall back to Length-based mapping.
+                  vfDur = nt2vf[noteType];
+                  if (!vfDur) {
+                    if (beats <= 0.25) vfDur = '16';
+                    else if (beats <= 0.5) vfDur = '8';
+                    else if (beats <= 1) vfDur = 'q';
+                    else vfDur = 'h';
+                  }
+                  if (dots > 0) vfDur += 'd';
+                  dashCount = 0;
+                  addDot = dots > 0;
+                }
+
+                // Create digit note
+                const jn = new VF.JianpuNote({
+                  scaleDegree: isRest ? 0 : scaleDegree,
+                  octave: octave,
+                  duration: vfDur,
+                  dash: false,
+                  digitFontSize: digitFontSize,
+                });
+
+                // Accidental
+                if (!isRest && pitch && keyInstr) {
+                  const keyAlt = keyInstr.getAlterationForPitch(pitch);
+                  if (pitch.Accidental !== keyAlt) {
+                    const acc = accidentalToVF(pitch.Accidental);
+                    if (acc) jn.addModifier(new VF.Accidental(acc), 0);
+                  }
+                }
+
+                // Dot modifier
+                if (addDot) {
+                  for (let d = 0; d < dots; d++) jn.addModifier(new VF.Dot(), 0);
+                }
+
+                notes.push(jn);
+                noteMap.set(note, jn);
+
+                // Track beam
+                if (note.NoteBeam) {
+                  if (!beamMap.has(note.NoteBeam)) beamMap.set(note.NoteBeam, []);
+                  beamMap.get(note.NoteBeam).push(jn);
+                }
+
+                // Track tuplet
+                if (note.NoteTuplet) {
+                  if (!tupletMap.has(note.NoteTuplet)) tupletMap.set(note.NoteTuplet, []);
+                  tupletMap.get(note.NoteTuplet).push(jn);
+                }
+
+                // Track tie start
+                if (note.NoteTie) {
+                  const tie = note.NoteTie;
+                  if (tie.StartNote === note) {
+                    allTies.push({ firstJianpuNote: jn, tie: tie });
+                  }
+                }
+
+                // Create dash notes
+                for (let d = 0; d < dashCount; d++) {
+                  const dn = new VF.JianpuNote({
+                    scaleDegree: isRest ? 0 : scaleDegree,
+                    octave: octave,
+                    duration: 'q',
+                    dash: true,
+                    digitFontSize: digitFontSize,
+                  });
+                  notes.push(dn);
+                }
+              }
+            }
+          }
+        }
+
+        // Create beams
+        for (const [beam, bNotes] of beamMap) {
+          if (bNotes.length >= 2) beams.push(new VF.JianpuBeam(bNotes));
+        }
+
+        // Create tuplets
+        for (const [tuplet, tNotes] of tupletMap) {
+          if (tNotes.length >= 2) {
+            const label = tuplet.TupletLabelNumber;
+            tuplets.push(new VF.Tuplet(tNotes, {
+              num_notes: label,
+              notes_occupied: 2,
+              bracketed: true,
+            }));
+          }
+        }
+
+        allMeasures.push({ notes, beams, tuplets, lyrics, numBeats, beatValue });
+      }
+
+      // Resolve ties: find end note's JianpuNote
+      const ties = [];
+      for (const { firstJianpuNote, tie } of allTies) {
+        const endNote = tie.Notes[tie.Notes.length - 1];
+        const endJianpu = noteMap.get(endNote);
+        if (endJianpu) {
+          ties.push(new VF.StaveTie({ firstNote: firstJianpuNote, lastNote: endJianpu }));
+        }
+      }
+
+      return { measures: allMeasures, ties };
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Combined adapter: MusicSheet → staff + jianpu (aligned)
+    // ══════════════════════════════════════════════════════════════
+
+    const ne2step = { 0:'C', 2:'D', 4:'E', 5:'F', 7:'G', 9:'A', 11:'B' };
+    const acc2vf = {}; // AccidentalEnum → VexFlow accidental string
+    acc2vf[AE.SHARP] = '#'; acc2vf[AE.FLAT] = 'b'; acc2vf[AE.NATURAL] = 'n';
+    acc2vf[AE.DOUBLESHARP] = '##'; acc2vf[AE.DOUBLEFLAT] = 'bb';
+
+    function vfDurationFromNote(noteType, dots, beats) {
+      let vfDur = nt2vf[noteType];
+      if (!vfDur) {
+        if (beats <= 0.25) vfDur = '16';
+        else if (beats <= 0.5) vfDur = '8';
+        else if (beats <= 1) vfDur = 'q';
+        else vfDur = 'h';
+      }
+      if (dots > 0) vfDur += 'd';
+      return vfDur;
+    }
+
+    function sheetToCombined(sheet, digitFontSize) {
+      digitFontSize = digitFontSize || 14;
+      let keyInstr = null;
+      for (const sm of sheet.SourceMeasures) {
+        const first = sm.FirstInstructionsStaffEntries;
+        if (first && first[0] && first[0].Instructions) {
+          for (const instr of first[0].Instructions) {
+            if (instr instanceof OSMD.KeyInstruction) { keyInstr = instr; break; }
+          }
+        }
+        if (keyInstr) break;
+      }
+      const keyVal = keyInstr ? keyInstr.Key : 0;
+      const modeVal = keyInstr ? keyInstr.Mode : KE.major;
+      const tonicLetter = getTonicLetterIndex(keyVal, modeVal);
+      const tonicNE = letter2ne[tonicLetter];
+      const tonicHT = tonicNE + 48;
+
+      const noteMapJ = new Map(); // OSMD Note → JianpuNote
+      const noteMapS = new Map(); // OSMD Note → StaveNote
+      const allMeasures = [];
+      const allJianpuTies = [];
+      const allStaffTies = [];
+
+      for (const sm of sheet.SourceMeasures) {
+        const ts = sm.ActiveTimeSignature;
+        const numBeats = ts ? ts.Numerator : 4;
+        const beatValue = ts ? ts.Denominator : 4;
+
+        const staffNotes = [];
+        const jianpuNotes = [];
+        const staffBeams = [];
+        const jianpuBeams = [];
+        const tuplets = []; // shared tuplet objects (drawn once per stave)
+        const jianpuTuplets = [];
+        const staffTuplets = [];
+        const lyrics = [];
+        const staffBeamMap = new Map();
+        const jianpuBeamMap = new Map();
+        const tupletMapS = new Map();
+        const tupletMapJ = new Map();
+        let noteIdx = 0;
+
+        for (const container of sm.VerticalSourceStaffEntryContainers) {
+          for (const staffEntry of container.StaffEntries) {
+            for (const ve of staffEntry.VoiceEntries) {
+              // Lyrics
+              if (ve.LyricsEntries) {
+                try {
+                  ve.LyricsEntries.forEach((key, entry) => {
+                    if (entry && entry.Text) lyrics.push({ text: entry.Text, noteIndex: noteIdx });
+                  });
+                } catch (e) {}
+              }
+
+              for (const note of ve.Notes) {
+                if (note.NoteTuplet && note.NoteTuplet.Notes.length > 0 && ve.GraceVoiceEntries && ve.GraceVoiceEntries.length > 0) continue;
+
+                const isRest = note.isRest();
+                const pitch = note.Pitch;
+                let scaleDegree = 1, octave = 4;
+                let step = 'C', vfOctave = 4;
+
+                if (!isRest && pitch) {
+                  const noteLetter = ne2letter[pitch.FundamentalNote];
+                  scaleDegree = ((noteLetter - tonicLetter + 7) % 7) + 1;
+                  const noteHT = pitch.getHalfTone();
+                  const octaveDiff = Math.trunc((noteHT - tonicHT) / 12);
+                  octave = 4 + octaveDiff;
+                  step = ne2step[pitch.FundamentalNote] || 'C';
+                  vfOctave = pitch.Octave + 3; // OSMD internal octave → VexFlow octave
+                }
+
+                const noteType = note.NoteTypeXml;
+                const dots = note.DotsXml || 0;
+                const beats = note.Length.RealValue * beatValue;
+                const isLong = beats >= 2;
+
+                // --- Staff StaveNote ---
+                let vfDurS, dashCountS;
+                if (isLong) {
+                  // Long note stays as its original type on staff
+                  vfDurS = vfDurationFromNote(noteType, 0, beats);
+                  dashCountS = 0;
+                } else {
+                  vfDurS = vfDurationFromNote(noteType, dots, beats);
+                  dashCountS = 0;
+                }
+                let sn;
+                if (isRest) {
+                  sn = new VF.StaveNote({ keys: ['d/5'], duration: vfDurS + 'r', auto_stem: true });
+                } else {
+                  sn = new VF.StaveNote({ keys: [step + '/' + vfOctave], duration: vfDurS, auto_stem: true });
+                  if (pitch && keyInstr) {
+                    const keyAlt = keyInstr.getAlterationForPitch(pitch);
+                    if (pitch.Accidental !== keyAlt && pitch.Accidental !== AE.NONE) {
+                      const acc = acc2vf[pitch.Accidental];
+                      if (acc) sn.addModifier(new VF.Accidental(acc), 0);
+                    }
+                  }
+                }
+                for (let d = 0; d < dots; d++) sn.addModifier(new VF.Dot(), 0);
+                staffNotes.push(sn);
+                noteMapS.set(note, sn);
+
+                if (note.NoteBeam) {
+                  if (!staffBeamMap.has(note.NoteBeam)) staffBeamMap.set(note.NoteBeam, []);
+                  staffBeamMap.get(note.NoteBeam).push(sn);
+                }
+                if (note.NoteTuplet) {
+                  if (!tupletMapS.has(note.NoteTuplet)) tupletMapS.set(note.NoteTuplet, []);
+                  tupletMapS.get(note.NoteTuplet).push(sn);
+                }
+                if (note.NoteTie) {
+                  if (note.NoteTie.StartNote === note) {
+                    allStaffTies.push({ firstNote: sn, tie: note.NoteTie });
+                  }
+                }
+
+                // --- Jianpu note ---
+                let vfDurJ, dashCountJ, addDotJ;
+                if (isLong) {
+                  vfDurJ = 'q';
+                  dashCountJ = Math.round(beats) - 1;
+                  addDotJ = false;
+                } else {
+                  vfDurJ = vfDurationFromNote(noteType, dots, beats);
+                  dashCountJ = 0;
+                  addDotJ = dots > 0;
+                }
+
+                const jn = new VF.JianpuNote({
+                  scaleDegree: isRest ? 0 : scaleDegree,
+                  octave: octave,
+                  duration: vfDurJ,
+                  dash: false,
+                  digitFontSize: digitFontSize,
+                });
+                // Accidental
+                if (!isRest && pitch && keyInstr) {
+                  const keyAlt = keyInstr.getAlterationForPitch(pitch);
+                  if (pitch.Accidental !== keyAlt) {
+                    const acc = accidentalToVF(pitch.Accidental);
+                    if (acc) jn.addModifier(new VF.Accidental(acc), 0);
+                  }
+                }
+                // Dot
+                if (addDotJ) {
+                  for (let d = 0; d < dots; d++) jn.addModifier(new VF.Dot(), 0);
+                }
+                jianpuNotes.push(jn);
+                noteMapJ.set(note, jn);
+                noteIdx++;
+
+                if (note.NoteBeam) {
+                  if (!jianpuBeamMap.has(note.NoteBeam)) jianpuBeamMap.set(note.NoteBeam, []);
+                  jianpuBeamMap.get(note.NoteBeam).push(jn);
+                }
+                if (note.NoteTuplet) {
+                  if (!tupletMapJ.has(note.NoteTuplet)) tupletMapJ.set(note.NoteTuplet, []);
+                  tupletMapJ.get(note.NoteTuplet).push(jn);
+                }
+                if (note.NoteTie) {
+                  if (note.NoteTie.StartNote === note) {
+                    allJianpuTies.push({ firstNote: jn, tie: note.NoteTie });
+                  }
+                }
+
+                // Dash notes (jianpu only)
+                for (let d = 0; d < dashCountJ; d++) {
+                  const dn = new VF.JianpuNote({
+                    scaleDegree: isRest ? 0 : scaleDegree,
+                    octave: octave,
+                    duration: 'q',
+                    dash: true,
+                    digitFontSize: digitFontSize,
+                  });
+                  jianpuNotes.push(dn);
+                  noteIdx++;
+                }
+              }
+            }
+          }
+        }
+
+        // Create beams
+        for (const [beam, bNotes] of staffBeamMap) {
+          if (bNotes.length >= 2) staffBeams.push(new VF.Beam(bNotes));
+        }
+        for (const [beam, bNotes] of jianpuBeamMap) {
+          if (bNotes.length >= 2) jianpuBeams.push(new VF.JianpuBeam(bNotes));
+        }
+        // Create tuplets
+        for (const [tuplet, tNotes] of tupletMapS) {
+          if (tNotes.length >= 2) {
+            staffTuplets.push(new VF.Tuplet(tNotes, {
+              num_notes: tuplet.TupletLabelNumber,
+              notes_occupied: 2,
+            }));
+          }
+        }
+        for (const [tuplet, tNotes] of tupletMapJ) {
+          if (tNotes.length >= 2) {
+            jianpuTuplets.push(new VF.Tuplet(tNotes, {
+              num_notes: tuplet.TupletLabelNumber,
+              notes_occupied: 2,
+            }));
+          }
+        }
+
+        allMeasures.push({
+          staffNotes, jianpuNotes, staffBeams, jianpuBeams,
+          staffTuplets, jianpuTuplets, lyrics, numBeats, beatValue,
+        });
+      }
+
+      // Resolve ties
+      const jianpuTies = [];
+      for (const { firstNote, tie } of allJianpuTies) {
+        const endNote = tie.Notes[tie.Notes.length - 1];
+        const endJianpu = noteMapJ.get(endNote);
+        if (endJianpu) jianpuTies.push(new VF.StaveTie({ firstNote, lastNote: endJianpu }));
+      }
+      const staffTies = [];
+      for (const { firstNote, tie } of allStaffTies) {
+        const endNote = tie.Notes[tie.Notes.length - 1];
+        const endStaff = noteMapS.get(endNote);
+        if (endStaff) staffTies.push(new VF.StaveTie({ firstNote, lastNote: endStaff }));
+      }
+
+      return { measures: allMeasures, jianpuTies, staffTies };
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Combined renderer: staff + jianpu + lyrics (aligned)
+    // ══════════════════════════════════════════════════════════════
+
+    function renderCombined(container, data, opts) {
+      opts = opts || {};
+      opts.digitFontSize = opts.digitFontSize || 14;
+      const fs = opts.digitFontSize;
+      const BASE_FS = 14;
+      const s = (v) => (fs * v) / BASE_FS;
+
+      const measures = data.measures;
+      const perLine = opts.perLine || 4;
+      const measureWidth = opts.measureWidth || s(240);
+      const showLyrics = opts.lyrics !== false;
+
+      // All vertical / padding spacings derived from font size.
+      const LYRICS_GAP      = s(25);  // digit baseline → lyrics baseline
+      const MEASURE_NUM_FS  = s(10);  // measure-number font size
+      const LYRICS_FS       = s(14);  // lyrics font size
+      const TOP_PADDING     = s(10);  // top margin before first line
+      const BOTTOM_PADDING  = s(20);  // bottom margin
+      const SIDE_PADDING    = s(10);  // left margin
+      const FORMATTER_PAD   = s(20);  // formatter slack inside a measure
+      const LINE_GAP        = s(20);  // extra gap between lines
+
+      // Configurable gap between staff lowest note and jianpu barline top.
+      const staffJianpuPadding = opts.staffJianpuPadding != null ? opts.staffJianpuPadding : s(20);
+
+      // Standard VexFlow constants (independent of jianpu font size).
+      // These are VexFlow defaults: Tables.STAVE_LINE_DISTANCE = 10, Tables.STEM_HEIGHT = 35.
+      // Hardcoded here because VF.Tables is not exposed in the debug build.
+      const STAFF_SPACING   = 10;  // VexFlow.Tables.STAVE_LINE_DISTANCE
+      const STAFF_SPACE_ABOVE = 4;  // default spaceAboveStaffLn for Stave
+      const STAFF_NUM_LINES = 5;
+      const STAFF_HEIGHT    = (STAFF_SPACE_ABOVE + STAFF_NUM_LINES) * STAFF_SPACING; // 90
+      const STEM_HEIGHT     = 35;  // VexFlow.Tables.STEM_HEIGHT — for down-stem extension
+
+      // JianpuStave visual barline height = (spaceAbove + spaceBelow) * spacing
+      // where spacing = fs*15/7 (=30 for fs=14), so height = 4 * spacing.
+      const jianpuVisualHeight = 4 * s(30);
+
+      // Total line height = staff region + staff-jianpu gap + jianpu + lyrics + line gap
+      const lyricsSpace = showLyrics ? LYRICS_GAP + fs : 0;
+      const lineHeight = STAFF_HEIGHT + STEM_HEIGHT + staffJianpuPadding
+                       + jianpuVisualHeight + lyricsSpace + LINE_GAP;
+
+      const lineCount = Math.ceil(measures.length / perLine);
+      const width = perLine * measureWidth + SIDE_PADDING * 2;
+      const height = lineCount * lineHeight + TOP_PADDING + BOTTOM_PADDING;
+
+      container.innerHTML = '';
+      const div = document.createElement('div');
+      const renderer = new VF.Renderer(div, VF.RendererBackends.SVG);
+      renderer.resize(width, height);
+      const ctx = renderer.getContext();
+
+      for (let line = 0; line < lineCount; line++) {
+        const lineStart = line * perLine;
+        const lineEnd = Math.min(lineStart + perLine, measures.length);
+        const yBase = TOP_PADDING + line * lineHeight;
+        const lineMeasures = [];
+        let maxBottomY = yBase;
+
+        // Pass 1: create staff staves, format both voices, draw staff notation,
+        // and collect the lowest notehead Y on this line.
+        for (let i = lineStart; i < lineEnd; i++) {
+          const m = measures[i];
+          const x = SIDE_PADDING + (i - lineStart) * measureWidth;
+          const isFirstInLine = (i - lineStart) === 0;
+          const yStaff = yBase;
+          // Temporary jianpu Y (will be repositioned after measuring staff).
+          // Place it below the expected staff bottom so layout/notes get sensible Ys.
+          const yJianpuTemp = yBase + STAFF_HEIGHT + STEM_HEIGHT + staffJianpuPadding;
+
+          const staffStave = new VF.Stave(x, yStaff, measureWidth, { leftBar: isFirstInLine });
+          const jianpuStave = new VF.JianpuStave(x, yJianpuTemp, measureWidth, { leftBar: isFirstInLine, digitFontSize: fs });
+
+          for (const n of m.staffNotes) n.setStave(staffStave);
+          for (const n of m.jianpuNotes) n.setStave(jianpuStave);
+
+          const staffVoice = new VF.Voice({ numBeats: m.numBeats, beatValue: m.beatValue });
+          staffVoice.setStrict(false);
+          staffVoice.addTickables(m.staffNotes);
+          const jianpuVoice = new VF.Voice({ numBeats: m.numBeats, beatValue: m.beatValue });
+          jianpuVoice.setStrict(false);
+          jianpuVoice.addTickables(m.jianpuNotes);
+
+          // Unified format: both voices share tick contexts → aligned
+          const formatter = new VF.Formatter();
+          formatter.format([staffVoice, jianpuVoice], measureWidth - FORMATTER_PAD);
+
+          // Draw staff notation
+          staffStave.setContext(ctx).draw();
+          staffVoice.setContext(ctx).draw();
+          for (const b of m.staffBeams) { b.setContext(ctx).draw(); }
+          for (const t of m.staffTuplets) { t.setContext(ctx).draw(); }
+
+          // Measure lowest notehead Y on the staff (for dynamic jianpu placement)
+          for (const sn of m.staffNotes) {
+            if (sn.isRest()) continue;
+            const stave = sn.getStave();
+            const kps = sn.getKeyProps();
+            if (!kps || kps.length === 0) continue;
+            for (const kp of kps) {
+              const y = stave.getYForNote(kp.line);
+              if (y > maxBottomY) maxBottomY = y;
+            }
+            // Account for down-stems extending below the notehead
+            if (sn.getStemDirection && sn.getStemDirection() === -1) {
+              const topKp = kps.reduce((a, b) => (a.line < b.line ? a : b));
+              const stemBottom = stave.getYForNote(topKp.line) + STEM_HEIGHT;
+              if (stemBottom > maxBottomY) maxBottomY = stemBottom;
+            }
+          }
+
+          lineMeasures.push({
+            m, x, isFirstInLine, yStaff, staffStave,
+            jianpuStave, jianpuVoice,
+            jianpuNotes: m.jianpuNotes,
+            jianpuBeams: m.jianpuBeams,
+            jianpuTuplets: m.jianpuTuplets,
+            lyrics: m.lyrics,
+            measureNum: i + 1,
+          });
+        }
+
+        // Position jianpu stave so its barline bottom (visually highest Y on screen,
+        // but returned by getBottomLineBottomY for numLines=0) sits at
+        // maxBottomY + staffJianpuPadding.
+        const tempStave = new VF.JianpuStave(0, 0, 100, { digitFontSize: fs });
+        const barlineTopOffset = tempStave.getBottomLineBottomY() - tempStave.y;
+        const yJianpuStave = maxBottomY + staffJianpuPadding - barlineTopOffset;
+
+        // Pass 2: reposition jianpu staves and draw jianpu + lyrics
+        for (const lm of lineMeasures) {
+          lm.jianpuStave.y = yJianpuStave;
+          for (const n of lm.jianpuNotes) n.setStave(lm.jianpuStave);
+
+          lm.jianpuStave.setContext(ctx).draw();
+          lm.jianpuVoice.setContext(ctx).draw();
+          for (const b of lm.jianpuBeams) { b.setContext(ctx).draw(); }
+          for (const t of lm.jianpuTuplets) { t.setContext(ctx).draw(); }
+
+          // Draw lyrics (below digit baseline)
+          if (showLyrics && lm.lyrics.length > 0) {
+            ctx.save();
+            ctx.setFont({ family: 'serif', size: LYRICS_FS, weight: 'normal', style: 'normal' });
+            ctx.setFillStyle('black');
+            for (const ly of lm.lyrics) {
+              if (ly.noteIndex < lm.jianpuNotes.length) {
+                const jn = lm.jianpuNotes[ly.noteIndex];
+                const nx = jn.getAbsoluteX() + jn.getDigitWidth() / 2;
+                const ny = lm.jianpuNotes[0].getDigitBaselineY() + LYRICS_GAP;
+                ctx.fillText(ly.text, nx - ctx.measureText(ly.text).width / 2, ny);
+              }
+            }
+            ctx.restore();
+          }
+
+          // Draw measure number — at barline's x+2, baseline shifted upward
+          // by one digit-width from the staff barline's top so the digit
+          // sits just above the barline.
+          const staffBarlineTopY = lm.staffStave.getTopLineTopY();
+          ctx.save();
+          ctx.setFont({ family: 'sans-serif', size: MEASURE_NUM_FS, weight: 'normal', style: 'normal' });
+          ctx.setFillStyle('#999');
+          const numText = String(lm.measureNum);
+          const numW = ctx.measureText(numText).width;
+          ctx.fillText(numText, lm.x + s(2), staffBarlineTopY - numW);
+          ctx.restore();
+        }
+      }
+
+      // Draw ties
+      for (const tie of (data.staffTies || [])) {
+        try { tie.setContext(ctx).draw(); } catch (e) { console.warn('Staff tie:', e); }
+      }
+      for (const tie of (data.jianpuTies || [])) {
+        try { tie.setContext(ctx).draw(); } catch (e) { console.warn('Jianpu tie:', e); }
+      }
+
+      container.appendChild(div);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Renderer
+    // ══════════════════════════════════════════════════════════════
+
+    function renderJianpu(container, data, opts) {
+      opts = opts || {};
+      opts.digitFontSize = opts.digitFontSize || 14;
+      const fs = opts.digitFontSize;
+      const BASE_FS = 14;
+      // Linear scale helper: convert a value calibrated at fs=14 to current fs.
+      const s = (v) => (fs * v) / BASE_FS;
+
+      const showLyrics = opts.lyrics !== false;
+      const showChords = opts.showChords === true && data.chords;
+      const measures = data.measures;
+      const ties = data.ties || [];
+      const perLine = opts.perLine || 4;
+      const measureWidth = opts.measureWidth || s(220);
+
+      // All vertical / padding spacings derived from font size.
+      const LYRICS_GAP      = s(25);  // digit baseline → lyrics baseline
+      const CHORD_GAP       = s(20);  // stave top → chord baseline
+      const MEASURE_NUM_FS  = s(10);  // measure-number font size
+      const LYRICS_FS       = s(14);  // lyrics font size (matches digit size at fs=14)
+      const CHORD_FS        = fs;     // chord symbol uses digit font size
+      const TOP_PADDING     = s(20);  // top margin before first line
+      const BOTTOM_PADDING  = s(20);  // bottom margin
+      const SIDE_PADDING    = s(10);  // left margin for first stave in line
+      const FORMATTER_PAD   = s(20);  // formatter slack inside a measure
+      const STAVE_EXTRA     = s(10);  // extra slack inside JianpuStave visual height
+
+      // JianpuStave uses spacingBetweenLinesPx = fs*15/7 (=30 for fs=14),
+      // with spaceAboveStaffLn=2 and spaceBelowStaffLn=2 → visual barline height = 4 * spacing.
+      const staveVisualHeight = s(30) * 2 + STAVE_EXTRA;
+
+      let lineHeight = staveVisualHeight;
+      if (showLyrics) lineHeight += LYRICS_GAP + fs;
+      if (showChords) lineHeight += CHORD_GAP + fs;
+
+      const lineCount = Math.ceil(measures.length / perLine);
+      const width = perLine * measureWidth + SIDE_PADDING * 2;
+      const height = lineCount * lineHeight + TOP_PADDING + BOTTOM_PADDING;
+
+      container.innerHTML = '';
+      const div = document.createElement('div');
+      const renderer = new VF.Renderer(div, VF.RendererBackends.SVG);
+      renderer.resize(width, height);
+      const ctx = renderer.getContext();
+
+      for (let line = 0; line < lineCount; line++) {
+        const lineStart = line * perLine;
+        const lineEnd = Math.min(lineStart + perLine, measures.length);
+        const y = TOP_PADDING + (showChords ? CHORD_GAP + fs : 0) + line * lineHeight;
+
+        for (let i = lineStart; i < lineEnd; i++) {
+          const m = measures[i];
+          const x = SIDE_PADDING + (i - lineStart) * measureWidth;
+          const isFirstInLine = (i - lineStart) === 0;
+
+          // Create stave — width = measureWidth so adjacent staves touch
+          const stave = new VF.JianpuStave(x, y, measureWidth, { leftBar: isFirstInLine, digitFontSize: fs });
+          stave.setContext(ctx).draw();
+
+          // Set note staves
+          for (const n of m.notes) n.setStave(stave);
+
+          // Create voice
+          const voice = new VF.Voice({ numBeats: m.numBeats, beatValue: m.beatValue });
+          voice.setStrict(false);
+          voice.addTickables(m.notes);
+
+          // Format
+          const formatter = new VF.Formatter();
+          formatter.joinVoices([voice]);
+          formatter.format([voice], measureWidth - FORMATTER_PAD);
+
+          // Draw notes
+          voice.setContext(ctx).draw();
+
+          // Draw beams
+          for (const b of m.beams) { b.setContext(ctx).draw(); }
+
+          // Draw tuplets
+          for (const t of m.tuplets) { t.setContext(ctx).draw(); }
+
+          // Draw chord symbols — positioned 2 high-octave-dots' worth of
+          // vertical space above the highest note's top (digit + high dots).
+          if (showChords) {
+            const chord = data.chords.find(c => c.measureIndex === i);
+            if (chord) {
+              // Find the highest note top (smallest topY = highest on screen).
+              // topY already accounts for digit ascent + high octave dots.
+              let highestTopY = Infinity;
+              for (const n of m.notes) {
+                if (typeof n.getStemExtents === 'function') {
+                  const ext = n.getStemExtents();
+                  if (ext && ext.topY < highestTopY) highestTopY = ext.topY;
+                }
+              }
+              if (highestTopY === Infinity) highestTopY = stave.getTopLineTopY();
+              // 2 octave dots' vertical footprint: 2 * (2*dotRadius + dotSpacingY)
+              // where dotRadius = dotSpacingY = fs/7 → 6*fs/7 total.
+              const twoOctaveDotsSpace = 2 * (2 * (fs / 7) + (fs / 7));
+              ctx.save();
+              ctx.setFont({ family: 'sans-serif', size: CHORD_FS, weight: 'bold', style: 'normal' });
+              ctx.setFillStyle('black');
+              const chordX = x + measureWidth / 2;
+              // Baseline sits 2 octave dots above the highest note top.
+              const chordY = highestTopY - twoOctaveDotsSpace;
+              ctx.fillText(chord.chord, chordX - ctx.measureText(chord.chord).width / 2, chordY);
+              ctx.restore();
+            }
+          }
+
+          // Draw lyrics
+          if (showLyrics && m.lyrics.length > 0) {
+            ctx.save();
+            ctx.setFont({ family: 'serif', size: LYRICS_FS, weight: 'normal', style: 'normal' });
+            ctx.setFillStyle('black');
+            for (const ly of m.lyrics) {
+              if (ly.noteIndex < m.notes.length) {
+                const jn = m.notes[ly.noteIndex];
+                const nx = jn.getAbsoluteX() + jn.getDigitWidth() / 2;
+                const ny = m.notes[0].getDigitBaselineY() + LYRICS_GAP;
+                ctx.fillText(ly.text, nx - ctx.measureText(ly.text).width / 2, ny);
+              }
+            }
+            ctx.restore();
+          }
+
+          // Draw measure number — at barline's x+2, baseline shifted upward
+          // by one digit-width from the barline's top so the digit sits just
+          // above the barline area. For numLines=0 (JianpuStave), the visual
+          // barline top is the smaller of getTopLineTopY()/getBottomLineBottomY().
+          const barlineTopY = Math.min(stave.getTopLineTopY(), stave.getBottomLineBottomY());
+          ctx.save();
+          ctx.setFont({ family: 'sans-serif', size: MEASURE_NUM_FS, weight: 'normal', style: 'normal' });
+          ctx.setFillStyle('#999');
+          const numText = String(i + 1);
+          const numW = ctx.measureText(numText).width;
+          ctx.fillText(numText, x + s(2), barlineTopY - numW);
+          ctx.restore();
+        }
+      }
+
+      // Draw ties (need to be after all notes are drawn)
+      for (const tie of ties) {
+        try { tie.setContext(ctx).draw(); } catch (e) { console.warn('Tie draw error:', e); }
+      }
+
+      container.appendChild(div);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Tab + Jianpu combined renderer
+    //  Renders a guitar TabStave (with chord fingering) above a
+    //  JianpuStave (melody + lyrics), beat-aligned via Formatter.
+    // ══════════════════════════════════════════════════════════════
+
+    // Standard guitar chord shapes → VexFlow TabNote positions.
+    // String numbering: 1 = high E (bottom of tab), 6 = low E (top).
+    function getChordPositions(chord) {
+      const shapes = {
+        'C':  [{str:5,fret:3},{str:4,fret:2},{str:3,fret:0},{str:2,fret:1},{str:1,fret:0}],
+        'G':  [{str:6,fret:3},{str:5,fret:2},{str:4,fret:0},{str:3,fret:0},{str:2,fret:0},{str:1,fret:3}],
+        'F':  [{str:6,fret:1},{str:5,fret:3},{str:4,fret:3},{str:3,fret:2},{str:2,fret:1},{str:1,fret:1}],
+        'Am': [{str:5,fret:0},{str:4,fret:2},{str:3,fret:2},{str:2,fret:1},{str:1,fret:0}],
+        'Dm': [{str:4,fret:0},{str:3,fret:2},{str:2,fret:3},{str:1,fret:1}],
+        'Em': [{str:6,fret:0},{str:5,fret:2},{str:4,fret:2},{str:3,fret:0},{str:2,fret:0},{str:1,fret:0}],
+        'Bm': [{str:5,fret:2},{str:4,fret:4},{str:3,fret:4},{str:2,fret:4},{str:1,fret:2}],
+      };
+      return shapes[chord] || [];
+    }
+
+    // Build an 8-eighth-note arpeggio (4 beats × 2 eighths) from a chord.
+    // Pattern: low → high → low (p-i-m-a-m-a-m-i style).
+    // Returns 8 single-string TabNote positions, beat-aligned with 4 quarter
+    // notes in the jianpu voice via the unified Formatter.
+    function getArpeggioPositions(chord) {
+      const positions = getChordPositions(chord);
+      if (positions.length === 0) return [];
+      // Sort by string descending (low pitch first).
+      const sorted = [...positions].sort((a, b) => b.str - a.str);
+      const n = sorted.length;
+      // 8-note arpeggio indices into `sorted`.
+      let indices;
+      if (n >= 6)      indices = [0, 1, 2, 3, 4, 5, 4, 3];
+      else if (n >= 5) indices = [0, 1, 2, 3, 4, 3, 2, 1];
+      else if (n >= 4) indices = [0, 1, 2, 3, 2, 3, 2, 1];
+      else             indices = [0, 1, 0, 1, 0, 1, 0, 1];
+      return indices.map(i => sorted[Math.min(i, n - 1)]);
+    }
+
+    // Detect a barre (大横按): the lowest non-open fret pressed on 2+ strings.
+    // Returns { fret, fromString, toString } or null.
+    // fromString/toString are string numbers (6=low E left, 1=high E right).
+    function detectBarre(positions) {
+      const fretted = positions.filter(p => typeof p.fret === 'number' && p.fret > 0);
+      if (fretted.length < 2) return null;
+      const minFret = Math.min(...fretted.map(p => p.fret));
+      const barreStrings = fretted.filter(p => p.fret === minFret).map(p => p.str);
+      if (barreStrings.length < 2) return null;
+      return {
+        fret: minFret,
+        fromString: Math.max(...barreStrings), // lower pitch (left on diagram)
+        toString: Math.min(...barreStrings),   // higher pitch (right on diagram)
+      };
+    }
+
+    // Draw a guitar chord diagram (fretboard grid with finger positions).
+    // (x, y) is the top-left of the diagram; returns the total height drawn.
+    function drawChordDiagram(ctx, x, y, fs, positions, chordName) {
+      const s = (v) => (fs * v) / 14;
+      const STRING_COUNT = 6;
+      const FRET_COUNT = 4;
+      const CELL_W = s(7);       // 弦间距
+      const CELL_H = s(9);       // 品间距
+      const LINE_W = s(0.6);     // 网格线宽
+      const DOT_R = s(3.2);      // 按弦点半径
+      const NAME_FS = s(11);     // 和弦名字体
+      const NAME_H = s(14);      // 和弦名区域高度
+      const NUT_H = s(2.4);      // nut 粗线高度
+      const MARK_GAP = s(4);     // 不弹标记距 nut 的间距
+      const BARRE_H = s(4.5);    // 大横按粗线高度
+
+      const gridW = CELL_W * (STRING_COUNT - 1);
+      const gridH = CELL_H * FRET_COUNT;
+      const totalH = NAME_H + NUT_H + gridH;
+
+      // 画和弦名（顶部居中）
+      if (chordName) {
+        ctx.save();
+        ctx.setFont({ family: 'sans-serif', size: NAME_FS, weight: 'bold', style: 'normal' });
+        ctx.setFillStyle('black');
+        const nameY = y + NAME_H - s(3);
+        ctx.fillText(chordName, x + gridW / 2 - ctx.measureText(chordName).width / 2, nameY);
+        ctx.restore();
+      }
+
+      const gridY = y + NAME_H;
+
+      // 画 nut（顶部粗线，表示开放和弦从第 1 品开始）
+      ctx.save();
+      ctx.setFillStyle('black');
+      ctx.fillRect(x, gridY, gridW, NUT_H);
+      ctx.restore();
+
+      // 画弦（竖线）
+      ctx.save();
+      ctx.setFillStyle('black');
+      for (let i = 0; i < STRING_COUNT; i++) {
+        const sx = x + i * CELL_W;
+        ctx.fillRect(sx, gridY, LINE_W, gridH);
+      }
+      // 画品（横线）
+      for (let i = 1; i <= FRET_COUNT; i++) {
+        const ly = gridY + i * CELL_H;
+        ctx.fillRect(x, ly, gridW, LINE_W);
+      }
+      ctx.restore();
+
+      // 画大横按（自动识别）：最低按弦品上 2+ 弦同品 → 一根粗横条
+      const barre = detectBarre(positions);
+      ctx.save();
+      ctx.setFillStyle('black');
+      if (barre) {
+        // stringIndex: str 6 → 0 (left), str 1 → 5 (right)
+        const leftIdx = STRING_COUNT - barre.fromString;
+        const rightIdx = STRING_COUNT - barre.toString;
+        const barreX = x + leftIdx * CELL_W - DOT_R;
+        const barreW = (rightIdx - leftIdx) * CELL_W + DOT_R * 2;
+        const barreY = gridY + NUT_H + (barre.fret - 0.5) * CELL_H;
+        ctx.fillRect(barreX, barreY - BARRE_H / 2, barreW, BARRE_H);
+      }
+      ctx.restore();
+
+      // 画按弦点 / 不弹 ×（空弦不再渲染空心圆）
+      ctx.save();
+      ctx.setFillStyle('black');
+      ctx.setStrokeStyle('black');
+      ctx.setLineWidth(s(0.8));
+      for (const pos of positions) {
+        // str: 1 = 高音 E（最右），6 = 低音 E（最左）
+        const stringIndex = STRING_COUNT - pos.str;
+        const dotX = x + stringIndex * CELL_W;
+        if (pos.fret === 'X' || pos.fret === 'x') {
+          // 不弹：× 在 nut 上方
+          ctx.setFont({ family: 'sans-serif', size: NAME_FS * 0.8, weight: 'normal' });
+          ctx.fillText('×', dotX - s(3), gridY - s(2));
+        } else if (pos.fret === 0) {
+          // 空弦：不再渲染空心圆（按用户要求）
+        } else {
+          // 按弦：实心圆点在对应品格中间
+          // 大横按覆盖的弦上不再画单独圆点（横条已表示）
+          const isBarred = barre && pos.fret === barre.fret;
+          if (!isBarred) {
+            const fret = typeof pos.fret === 'number' ? pos.fret : parseInt(pos.fret, 10);
+            const dotY = gridY + NUT_H + (fret - 0.5) * CELL_H;
+            ctx.beginPath();
+            ctx.arc(dotX, dotY, DOT_R, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+      ctx.restore();
+
+      return totalH;
+    }
+
+    function renderTabJianpu(container, data, opts) {
+      opts = opts || {};
+      opts.digitFontSize = opts.digitFontSize || 14;
+      const fs = opts.digitFontSize;
+      const BASE_FS = 14;
+      const s = (v) => (fs * v) / BASE_FS;
+
+      const measures = data.measures;
+      const showChords = opts.showDiagrams !== false && data.chords && data.chords.length > 0;
+      const showLyrics = opts.lyrics !== false;
+      const perLine = opts.perLine || 4;
+      const measureWidth = opts.measureWidth || s(240);
+
+      // Spacings derived from font size (consistent with renderJianpu).
+      const LYRICS_GAP      = s(25);
+      const MEASURE_NUM_FS  = s(10);
+      const LYRICS_FS       = s(14);
+      const CHORD_FS        = fs;
+      const TOP_PADDING     = s(20);
+      const BOTTOM_PADDING  = s(20);
+      const SIDE_PADDING    = s(10);
+      const FORMATTER_PAD   = s(20);
+      const LINE_GAP        = s(20);
+      const STAVE_GAP       = s(6);   // gap between tab and jianpu (compact)
+      const DIAGRAM_GAP     = s(3);   // gap between chord diagram bottom and tab top
+
+      // ChordDiagram dimensions — must match drawChordDiagram() constants.
+      const DIAGRAM_STRING_COUNT = 6;
+      const DIAGRAM_FRET_COUNT = 4;
+      const DIAGRAM_CELL_W = s(7);
+      const DIAGRAM_CELL_H = s(9);
+      const DIAGRAM_NAME_H = s(14);
+      const DIAGRAM_NUT_H = s(2.4);
+      const DIAGRAM_WIDTH = DIAGRAM_CELL_W * (DIAGRAM_STRING_COUNT - 1);
+      const DIAGRAM_HEIGHT = DIAGRAM_NAME_H + DIAGRAM_NUT_H + DIAGRAM_CELL_H * DIAGRAM_FRET_COUNT;
+
+      // TabStave geometry — VexFlow defaults, with reduced padding for compact layout.
+      // spacingBetweenLinesPx = 13, numLines = 6. TabStave has a FIXED height.
+      const TAB_LINE_SPACING  = 13;
+      const TAB_NUM_LINES     = 6;
+      const TAB_SPACE_ABOVE   = 1;
+      const TAB_SPACE_BELOW   = 1;
+      const TAB_HEIGHT = (TAB_SPACE_ABOVE + TAB_NUM_LINES + TAB_SPACE_BELOW) * TAB_LINE_SPACING;
+
+      // JianpuStave visual height (same formula as renderJianpu).
+      const STAVE_EXTRA = s(10);
+      const jianpuVisualHeight = s(30) * 2 + STAVE_EXTRA;
+
+      // Layout: diagram sits directly above tab (like measure numbers above barline).
+      // Tab → small gap → jianpu → lyrics. Space is reserved only when enabled.
+      const diagramSpace = showChords ? DIAGRAM_HEIGHT + DIAGRAM_GAP : 0;
+      const lyricsSpace = showLyrics ? LYRICS_GAP + fs : 0;
+      const lineHeight = diagramSpace + TAB_HEIGHT + STAVE_GAP
+                       + jianpuVisualHeight + lyricsSpace + LINE_GAP;
+
+      const lineCount = Math.ceil(measures.length / perLine);
+      const width = perLine * measureWidth + SIDE_PADDING * 2;
+      const height = lineCount * lineHeight + TOP_PADDING + BOTTOM_PADDING;
+
+      container.innerHTML = '';
+      const div = document.createElement('div');
+      const renderer = new VF.Renderer(div, VF.RendererBackends.SVG);
+      renderer.resize(width, height);
+      const ctx = renderer.getContext();
+
+      for (let line = 0; line < lineCount; line++) {
+        const lineStart = line * perLine;
+        const lineEnd = Math.min(lineStart + perLine, measures.length);
+        const yBase = TOP_PADDING + line * lineHeight;
+
+        for (let i = lineStart; i < lineEnd; i++) {
+          const m = measures[i];
+          const x = SIDE_PADDING + (i - lineStart) * measureWidth;
+          const isFirstInLine = (i - lineStart) === 0;
+
+          // Diagram sits directly above the tab (small DIAGRAM_GAP).
+          const yDiagram = yBase;
+          const yTab = yBase + diagramSpace;
+          const yJianpu = yTab + TAB_HEIGHT + STAVE_GAP;
+
+          const tabStave = new VF.TabStave(x, yTab, measureWidth, {
+            leftBar: isFirstInLine,
+            rightBar: true,
+            spaceAboveStaffLn: TAB_SPACE_ABOVE,
+            spaceBelowStaffLn: TAB_SPACE_BELOW,
+          });
+          const jianpuStave = new VF.JianpuStave(x, yJianpu, measureWidth, {
+            leftBar: isFirstInLine,
+            digitFontSize: fs,
+          });
+
+          for (const n of m.tabNotes) n.setStave(tabStave);
+          for (const n of m.jianpuNotes) n.setStave(jianpuStave);
+
+          const tabVoice = new VF.Voice({ numBeats: m.numBeats, beatValue: m.beatValue });
+          tabVoice.setStrict(false);
+          tabVoice.addTickables(m.tabNotes);
+          const jianpuVoice = new VF.Voice({ numBeats: m.numBeats, beatValue: m.beatValue });
+          jianpuVoice.setStrict(false);
+          jianpuVoice.addTickables(m.jianpuNotes);
+
+          // Unified format: both voices share tick contexts → aligned
+          const formatter = new VF.Formatter();
+          formatter.format([tabVoice, jianpuVoice], measureWidth - FORMATTER_PAD);
+
+          // Draw tab stave + notes
+          tabStave.setContext(ctx).draw();
+          tabVoice.setContext(ctx).draw();
+          for (const b of (m.tabBeams || [])) { b.setContext(ctx).draw(); }
+
+          // Draw jianpu stave + notes
+          jianpuStave.setContext(ctx).draw();
+          jianpuVoice.setContext(ctx).draw();
+          for (const b of m.jianpuBeams) { b.setContext(ctx).draw(); }
+          for (const t of m.jianpuTuplets) { t.setContext(ctx).draw(); }
+
+          // Draw lyrics (below jianpu digit baseline)
+          if (showLyrics && m.lyrics.length > 0) {
+            ctx.save();
+            ctx.setFont({ family: 'serif', size: LYRICS_FS, weight: 'normal', style: 'normal' });
+            ctx.setFillStyle('black');
+            for (const ly of m.lyrics) {
+              if (ly.noteIndex < m.jianpuNotes.length) {
+                const jn = m.jianpuNotes[ly.noteIndex];
+                const nx = jn.getAbsoluteX() + jn.getDigitWidth() / 2;
+                const ny = m.jianpuNotes[0].getDigitBaselineY() + LYRICS_GAP;
+                ctx.fillText(ly.text, nx - ctx.measureText(ly.text).width / 2, ny);
+              }
+            }
+            ctx.restore();
+          }
+
+          // Draw measure number — at barline's x+2, baseline shifted upward
+          // by one digit-width from the tab barline's top so the digit sits
+          // just above the barline.
+          const tabBarlineTopY = tabStave.getTopLineTopY();
+          ctx.save();
+          ctx.setFont({ family: 'sans-serif', size: MEASURE_NUM_FS, weight: 'normal', style: 'normal' });
+          ctx.setFillStyle('#999');
+          const numText = String(i + 1);
+          const numW = ctx.measureText(numText).width;
+          ctx.fillText(numText, x + s(2), tabBarlineTopY - numW);
+          ctx.restore();
+
+          // Draw chord diagram AFTER VexFlow staves, isolated in its own
+          // SVG group so VexFlow's context state doesn't interfere.
+          if (showChords) {
+            const chord = data.chords.find(c => c.measureIndex === i);
+            if (chord) {
+              const positions = getChordPositions(chord.chord);
+              const diagramX = x + (measureWidth - DIAGRAM_WIDTH) / 2;
+              ctx.openGroup('chord-diagram', 'chord-diag-' + i);
+              drawChordDiagram(ctx, diagramX, yDiagram, fs, positions, chord.chord);
+              ctx.closeGroup();
+            }
+          }
+        }
+      }
+
+      container.appendChild(div);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Staff-only renderer (五线谱)
+    // ══════════════════════════════════════════════════════════════
+
+    function renderStaff(container, data, opts) {
+      opts = opts || {};
+      opts.digitFontSize = opts.digitFontSize || 14;
+      const fs = opts.digitFontSize;
+      const BASE_FS = 14;
+      const s = (v) => (fs * v) / BASE_FS;
+
+      const measures = data.measures;
+      const perLine = opts.perLine || 4;
+      const measureWidth = opts.measureWidth || s(240);
+
+      const MEASURE_NUM_FS  = s(10);
+      const TOP_PADDING     = s(10);
+      const BOTTOM_PADDING  = s(20);
+      const SIDE_PADDING    = s(10);
+      const FORMATTER_PAD   = s(20);
+      const LINE_GAP        = s(20);
+
+      const STAFF_SPACING   = 10;
+      const STAFF_SPACE_ABOVE = 4;
+      const STAFF_NUM_LINES = 5;
+      const STAFF_HEIGHT    = (STAFF_SPACE_ABOVE + STAFF_NUM_LINES) * STAFF_SPACING;
+      const STEM_HEIGHT     = 35;
+
+      const lineHeight = STAFF_HEIGHT + STEM_HEIGHT + LINE_GAP;
+
+      const lineCount = Math.ceil(measures.length / perLine);
+      const width = perLine * measureWidth + SIDE_PADDING * 2;
+      const height = lineCount * lineHeight + TOP_PADDING + BOTTOM_PADDING;
+
+      container.innerHTML = '';
+      const div = document.createElement('div');
+      const renderer = new VF.Renderer(div, VF.RendererBackends.SVG);
+      renderer.resize(width, height);
+      const ctx = renderer.getContext();
+
+      for (let line = 0; line < lineCount; line++) {
+        const lineStart = line * perLine;
+        const lineEnd = Math.min(lineStart + perLine, measures.length);
+        const yBase = TOP_PADDING + line * lineHeight;
+
+        for (let i = lineStart; i < lineEnd; i++) {
+          const m = measures[i];
+          const x = SIDE_PADDING + (i - lineStart) * measureWidth;
+          const isFirstInLine = (i - lineStart) === 0;
+
+          const staffStave = new VF.Stave(x, yBase, measureWidth, { leftBar: isFirstInLine });
+          for (const n of m.staffNotes) n.setStave(staffStave);
+
+          const staffVoice = new VF.Voice({ numBeats: m.numBeats, beatValue: m.beatValue });
+          staffVoice.setStrict(false);
+          staffVoice.addTickables(m.staffNotes);
+          const formatter = new VF.Formatter();
+          formatter.format([staffVoice], measureWidth - FORMATTER_PAD);
+
+          staffStave.setContext(ctx).draw();
+          staffVoice.setContext(ctx).draw();
+          for (const b of m.staffBeams) { b.setContext(ctx).draw(); }
+          for (const t of m.staffTuplets) { t.setContext(ctx).draw(); }
+
+          // Measure number
+          const barlineTopY = staffStave.getTopLineTopY();
+          ctx.save();
+          ctx.setFont({ family: 'sans-serif', size: MEASURE_NUM_FS, weight: 'normal', style: 'normal' });
+          ctx.setFillStyle('#999');
+          const numText = String(i + 1);
+          const numW = ctx.measureText(numText).width;
+          ctx.fillText(numText, x + s(2), barlineTopY - numW);
+          ctx.restore();
+        }
+      }
+
+      for (const tie of (data.staffTies || [])) {
+        try { tie.setContext(ctx).draw(); } catch (e) { console.warn('Staff tie:', e); }
+      }
+
+      container.appendChild(div);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Tab-only renderer (吉他谱)
+    //  opts.showDiagrams: draw chord diagrams above each measure
+    // ══════════════════════════════════════════════════════════════
+
+    function renderTab(container, data, opts) {
+      opts = opts || {};
+      opts.digitFontSize = opts.digitFontSize || 14;
+      const fs = opts.digitFontSize;
+      const BASE_FS = 14;
+      const s = (v) => (fs * v) / BASE_FS;
+
+      const measures = data.measures;
+      const showChords = opts.showDiagrams === true && data.chords && data.chords.length > 0;
+      const perLine = opts.perLine || 4;
+      const measureWidth = opts.measureWidth || s(240);
+
+      const MEASURE_NUM_FS  = s(10);
+      const TOP_PADDING     = s(20);
+      const BOTTOM_PADDING  = s(20);
+      const SIDE_PADDING    = s(10);
+      const FORMATTER_PAD   = s(20);
+      const LINE_GAP        = s(20);
+      const DIAGRAM_GAP     = s(3);
+
+      // ChordDiagram dimensions
+      const DIAGRAM_STRING_COUNT = 6;
+      const DIAGRAM_FRET_COUNT = 4;
+      const DIAGRAM_CELL_W = s(7);
+      const DIAGRAM_CELL_H = s(9);
+      const DIAGRAM_NAME_H = s(14);
+      const DIAGRAM_NUT_H = s(2.4);
+      const DIAGRAM_WIDTH = DIAGRAM_CELL_W * (DIAGRAM_STRING_COUNT - 1);
+      const DIAGRAM_HEIGHT = DIAGRAM_NAME_H + DIAGRAM_NUT_H + DIAGRAM_CELL_H * DIAGRAM_FRET_COUNT;
+
+      const TAB_LINE_SPACING  = 13;
+      const TAB_NUM_LINES     = 6;
+      const TAB_SPACE_ABOVE   = 1;
+      const TAB_SPACE_BELOW   = 1;
+      const TAB_HEIGHT = (TAB_SPACE_ABOVE + TAB_NUM_LINES + TAB_SPACE_BELOW) * TAB_LINE_SPACING;
+
+      const diagramSpace = showChords ? DIAGRAM_HEIGHT + DIAGRAM_GAP : 0;
+      const lineHeight = diagramSpace + TAB_HEIGHT + LINE_GAP;
+
+      const lineCount = Math.ceil(measures.length / perLine);
+      const width = perLine * measureWidth + SIDE_PADDING * 2;
+      const height = lineCount * lineHeight + TOP_PADDING + BOTTOM_PADDING;
+
+      container.innerHTML = '';
+      const div = document.createElement('div');
+      const renderer = new VF.Renderer(div, VF.RendererBackends.SVG);
+      renderer.resize(width, height);
+      const ctx = renderer.getContext();
+
+      for (let line = 0; line < lineCount; line++) {
+        const lineStart = line * perLine;
+        const lineEnd = Math.min(lineStart + perLine, measures.length);
+        const yBase = TOP_PADDING + line * lineHeight;
+
+        for (let i = lineStart; i < lineEnd; i++) {
+          const m = measures[i];
+          const x = SIDE_PADDING + (i - lineStart) * measureWidth;
+          const isFirstInLine = (i - lineStart) === 0;
+
+          const yTab = yBase + diagramSpace;
+          const tabStave = new VF.TabStave(x, yTab, measureWidth, {
+            leftBar: isFirstInLine, rightBar: true,
+            spaceAboveStaffLn: TAB_SPACE_ABOVE, spaceBelowStaffLn: TAB_SPACE_BELOW,
+          });
+
+          for (const n of m.tabNotes) n.setStave(tabStave);
+          const tabVoice = new VF.Voice({ numBeats: m.numBeats, beatValue: m.beatValue });
+          tabVoice.setStrict(false);
+          tabVoice.addTickables(m.tabNotes);
+          const formatter = new VF.Formatter();
+          formatter.format([tabVoice], measureWidth - FORMATTER_PAD);
+
+          tabStave.setContext(ctx).draw();
+          tabVoice.setContext(ctx).draw();
+
+          // Measure number
+          const tabBarlineTopY = tabStave.getTopLineTopY();
+          ctx.save();
+          ctx.setFont({ family: 'sans-serif', size: MEASURE_NUM_FS, weight: 'normal', style: 'normal' });
+          ctx.setFillStyle('#999');
+          const numText = String(i + 1);
+          const numW = ctx.measureText(numText).width;
+          ctx.fillText(numText, x + s(2), tabBarlineTopY - numW);
+          ctx.restore();
+
+          // Chord diagram (if enabled)
+          if (showChords) {
+            const chord = data.chords.find(c => c.measureIndex === i);
+            if (chord) {
+              const positions = getChordPositions(chord.chord);
+              const diagramX = x + (measureWidth - DIAGRAM_WIDTH) / 2;
+              const yDiagram = yBase;
+              ctx.openGroup('chord-diagram', 'chord-diag-tab-' + i);
+              drawChordDiagram(ctx, diagramX, yDiagram, fs, positions, chord.chord);
+              ctx.closeGroup();
+            }
+          }
+        }
+      }
+
+      container.appendChild(div);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Tab2: Jianpu notation parser → JianpuNote data
+    //  Parses custom notation like "1 - - - | 55 66 | 5(8)5(16) ..."
+    // ══════════════════════════════════════════════════════════════
+
+    function parseJianpuNotation(notation, fs) {
+      fs = fs || 14;
+      const measures = [];
+      const ties = [];
+      let currentOctave = 4; // 4 = middle, 2/3 = low, 5/6 = high
+      let tieStartNote = null;
+
+      // Duration string → VexFlow duration
+      const durMap = {
+        '2': 'h', '4': 'q', '8': '8', '16': '16',
+        '8分浮点': '8d', '4分浮点': 'qd',
+      };
+
+      function createNote(degree, accidental, octave, vfDur, fs, dotted) {
+        const isRest = degree === 0;
+        let dur = vfDur || 'q';
+        if (dotted && !dur.endsWith('d')) dur += 'd';
+        const jn = new VF.JianpuNote({
+          scaleDegree: isRest ? 0 : degree,
+          octave: octave,
+          duration: dur,
+          dash: false,
+          digitFontSize: fs,
+        });
+        if (!isRest && accidental) {
+          const accMap = { '#': '#', 'b': 'b', 'n': 'n' };
+          if (accMap[accidental]) jn.addModifier(new VF.Accidental(accMap[accidental]), 0);
+        }
+        if (dotted) {
+          jn.addModifier(new VF.Dot(), 0);
+        }
+        return jn;
+      }
+
+      // Parse a note string like "1b", "#3", "5", "0" into {degree, accidental}
+      function parseNoteChars(str) {
+        const specs = [];
+        let i = 0;
+        while (i < str.length) {
+          let accidental = null;
+          if (str[i] === '#' || str[i] === 'b') {
+            accidental = str[i];
+            i++;
+          }
+          if (i < str.length && /[0-7]/.test(str[i])) {
+            specs.push({ degree: parseInt(str[i], 10), accidental });
+            i++;
+          } else {
+            i++;
+          }
+        }
+        return specs;
+      }
+
+      const measureStrings = notation.split('|').map(s => s.trim()).filter(s => s.length > 0);
+
+      for (const mStr of measureStrings) {
+        const notes = [];
+        const beams = [];
+        const tuplets = [];
+        let beamNotes = [];
+
+        const tokens = mStr.split(/\s+/).filter(t => t.length > 0);
+
+        for (const token of tokens) {
+          // Standalone octave marker tokens
+          if (token === '低两个八度') { currentOctave = 2; continue; }
+          if (token === '低一个八度' || token === '低八度') { currentOctave = 3; continue; }
+          if (token === '无八度') { currentOctave = 4; continue; }
+          if (token === '高两个八度') { currentOctave = 6; continue; }
+          if (token === '高八度') { currentOctave = 5; continue; }
+
+          // Extract trailing octave marker (e.g., "1234(16)低两个八度")
+          const octaveRegex = /(低两个八度|低一个八度|低八度|无八度|高两个八度|高八度)$/;
+          const octaveMatch = token.match(octaveRegex);
+          let workingToken = token;
+          if (octaveMatch) {
+            const marker = octaveMatch[1];
+            if (marker === '低两个八度') currentOctave = 2;
+            else if (marker === '低一个八度' || marker === '低八度') currentOctave = 3;
+            else if (marker === '无八度') currentOctave = 4;
+            else if (marker === '高两个八度') currentOctave = 6;
+            else if (marker === '高八度') currentOctave = 5;
+            workingToken = token.slice(0, octaveMatch.index);
+          }
+
+          // Extension dash
+          if (workingToken === '-') {
+            if (notes.length > 0) {
+              const prev = notes[notes.length - 1];
+              const dn = new VF.JianpuNote({
+                scaleDegree: prev.scaleDegree,
+                octave: prev.octave,
+                duration: 'q',
+                dash: true,
+                digitFontSize: fs,
+              });
+              notes.push(dn);
+            }
+            continue;
+          }
+
+          // Extract tie markers from token (after octave marker was stripped)
+          let tieStart = false, tieEnd = false;
+          let cleanToken = workingToken;
+          if (cleanToken.includes('连线开始') || cleanToken.includes('连接开始')) {
+            tieStart = true;
+            cleanToken = cleanToken.replace(/连线开始|连接开始/g, '');
+          }
+          if (cleanToken.includes('连线结束') || cleanToken.includes('连接结束')) {
+            tieEnd = true;
+            cleanToken = cleanToken.replace(/连线结束|连接结束/g, '');
+          }
+          // Also handle Chinese parentheses
+          cleanToken = cleanToken.replace(/（/g, '(').replace(/）/g, ')');
+          if (cleanToken.length === 0) {
+            if (tieEnd && tieStartNote && notes.length > 0) {
+              ties.push(new VF.StaveTie({ firstNote: tieStartNote, lastNote: notes[notes.length - 1] }));
+              tieStartNote = null;
+            }
+            continue;
+          }
+
+          // Triplet: "222(3连音)" or "567(3连音)"
+          const tripletMatch = cleanToken.match(/^(.+)\(3连音\)$/);
+          if (tripletMatch) {
+            const noteStr = tripletMatch[1];
+            const specs = parseNoteChars(noteStr);
+            const tNotes = specs.map(s => createNote(s.degree, s.accidental, currentOctave, '8', fs, false));
+            for (const tn of tNotes) notes.push(tn);
+            if (tNotes.length >= 2) {
+              tuplets.push(new VF.Tuplet(tNotes, { num_notes: 3, notes_occupied: 2, bracketed: true }));
+            }
+            if (tieStart && tNotes.length > 0) tieStartNote = tNotes[tNotes.length - 1];
+            if (tieEnd && tieStartNote && notes.length > 0) {
+              ties.push(new VF.StaveTie({ firstNote: tieStartNote, lastNote: notes[notes.length - 1] }));
+              tieStartNote = null;
+            }
+            continue;
+          }
+
+          // Trailing shared duration: "1b223(16)" or "55(8)"
+          const sharedDurMatch = cleanToken.match(/^([^()]+)\((2|4|8|16|8分浮点|4分浮点)\)$/);
+          if (sharedDurMatch) {
+            const noteStr = sharedDurMatch[1];
+            const durStr = sharedDurMatch[2];
+            const specs = parseNoteChars(noteStr);
+            const vfDur = durMap[durStr] || 'q';
+            const dotted = durStr.includes('浮点');
+            const grpNotes = specs.map(s => createNote(s.degree, s.accidental, currentOctave, vfDur, fs, dotted));
+            for (const gn of grpNotes) notes.push(gn);
+            // Beam if 2+ notes and base duration is 8th or 16th (dotted included)
+            const baseDur = vfDur.replace(/d+$/, '');
+            if (grpNotes.length >= 2 && (baseDur === '8' || baseDur === '16')) {
+              beams.push(new VF.JianpuBeam(grpNotes));
+            }
+            if (tieStart && grpNotes.length > 0) tieStartNote = grpNotes[grpNotes.length - 1];
+            if (tieEnd && tieStartNote && notes.length > 0) {
+              ties.push(new VF.StaveTie({ firstNote: tieStartNote, lastNote: notes[notes.length - 1] }));
+              tieStartNote = null;
+            }
+            continue;
+          }
+
+          // Individual durations: "5(8)5(16)5(16)" or "1(8分浮点)1(16)"
+          const individualRegex = /([#b]?)([0-7])\((2|4|8|16|8分浮点|4分浮点)\)/g;
+          let indMatch;
+          const indNotes = [];
+          let hasIndividual = false;
+          while ((indMatch = individualRegex.exec(cleanToken)) !== null) {
+            hasIndividual = true;
+            const accidental = indMatch[1] || null;
+            const degree = parseInt(indMatch[2], 10);
+            const durStr = indMatch[3];
+            const vfDur = durMap[durStr] || 'q';
+            const dotted = durStr.includes('浮点');
+            indNotes.push(createNote(degree, accidental, currentOctave, vfDur, fs, dotted));
+          }
+          if (hasIndividual) {
+            for (const in_ of indNotes) notes.push(in_);
+            if (indNotes.length >= 2) {
+              // Beam 8th/16th groups (dotted notes beam by base duration)
+              const beamable = indNotes.filter(n => {
+                const d = n.duration.replace(/d+$/, '');
+                return d === '8' || d === '16';
+              });
+              if (beamable.length >= 2) beams.push(new VF.JianpuBeam(beamable));
+            }
+            if (tieStart && indNotes.length > 0) tieStartNote = indNotes[indNotes.length - 1];
+            if (tieEnd && tieStartNote && notes.length > 0) {
+              ties.push(new VF.StaveTie({ firstNote: tieStartNote, lastNote: notes[notes.length - 1] }));
+              tieStartNote = null;
+            }
+            continue;
+          }
+
+          // Plain digits without duration: "55", "5555", "4", "0"
+          const specs = parseNoteChars(cleanToken);
+          if (specs.length > 0) {
+            const count = specs.length;
+            let vfDur;
+            if (count === 1) vfDur = 'q';
+            else if (count === 2) vfDur = '8';
+            else if (count === 4) vfDur = '16';
+            else vfDur = '8';
+            const grpNotes = specs.map(s => createNote(s.degree, s.accidental, currentOctave, vfDur, fs, false));
+            for (const gn of grpNotes) notes.push(gn);
+            if (grpNotes.length >= 2) beams.push(new VF.JianpuBeam(grpNotes));
+            if (tieStart && grpNotes.length > 0) tieStartNote = grpNotes[grpNotes.length - 1];
+            if (tieEnd && tieStartNote && notes.length > 0) {
+              ties.push(new VF.StaveTie({ firstNote: tieStartNote, lastNote: notes[notes.length - 1] }));
+              tieStartNote = null;
+            }
+          }
+        }
+
+        measures.push({ notes, beams, tuplets, lyrics: [], numBeats: 4, beatValue: 4 });
+      }
+
+      return { measures, ties };
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Error handler
+    // ══════════════════════════════════════════════════════════════
+
+    function showError(container, err) {
+      container.innerHTML = '<div class="err">' + (err.stack || err.message || String(err)) + '</div>';
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Tab switching (global — called from inline onclick handlers)
+    // ══════════════════════════════════════════════════════════════
+
+    window.switchTab = function (tabId) {
+      for (const b of document.querySelectorAll('.tab-btn')) {
+        b.classList.toggle('active', b.dataset.tab === tabId);
+      }
+      for (const c of document.querySelectorAll('.tab-content')) {
+        c.classList.toggle('active', c.id === tabId);
+      }
+    };
+
+    // ══════════════════════════════════════════════════════════════
+    //  Demo Sections
+    // ══════════════════════════════════════════════════════════════
+
+    // Chord progression for Ode to Joy in C major (8 measures).
+    // Phrase 1 (m1–4): I – I – I – V   (half cadence)
+    // Phrase 2 (m5–8): I – I – IV – I  (authentic cadence)
+    const ODE_CHORDS = [
+      { measureIndex: 0, chord: 'C' },
+      { measureIndex: 1, chord: 'C' },
+      { measureIndex: 2, chord: 'C' },
+      { measureIndex: 3, chord: 'G' },
+      { measureIndex: 4, chord: 'C' },
+      { measureIndex: 5, chord: 'C' },
+      { measureIndex: 6, chord: 'F' },
+      { measureIndex: 7, chord: 'C' },
+    ];
+
+    // Build 8 eighth-note TabNotes per measure — a standard chord
+    // arpeggio (低→高→低). 8 eighths = 4 beats, matching the jianpu
+    // voice's 4 quarters so both voices align via a unified Formatter.
+    function buildTabMeasures(jianpuData) {
+      return jianpuData.measures.map((jm, i) => {
+        const chord = ODE_CHORDS.find(c => c.measureIndex === i);
+        const arpeggio = chord ? getArpeggioPositions(chord.chord) : [];
+        const tabNotes = arpeggio.map(pos => new VF.TabNote({
+          positions: [pos],
+          duration: '8',
+        }, false)); // drawStem=false — standard tab has no stems
+        return {
+          tabNotes,
+          tabBeams: [],
+          jianpuNotes: jm.notes,
+          jianpuBeams: jm.beams,
+          jianpuTuplets: jm.tuplets,
+          lyrics: jm.lyrics,
+          numBeats: jm.numBeats,
+          beatValue: jm.beatValue,
+        };
+      });
+    }
+
+    function renderInto(elId, fn) {
+      const el = document.getElementById(elId);
+      try { fn(el); } catch (e) { showError(el, e); }
+    }
+
+    function jianpuDataFromXml(withLyrics, title, fs) {
+      const sheet = parseXML(generateOdeToJoyXML(withLyrics), title);
+      return sheetToJianpu(sheet, fs);
+    }
+
+    function combinedDataFromXml(withLyrics, title, fs) {
+      const sheet = parseXML(generateOdeToJoyXML(withLyrics), title);
+      return sheetToCombined(sheet, fs);
+    }
+
+    // ── Tab 1: 乐谱组合 ─────────────────────────────────────────
+
+    // 1. Jianpu 单纯旋律
+    function initT1S1() {
+      renderInto('t1s1', el => {
+        renderJianpu(el, jianpuDataFromXml(false, 'Ode to Joy (melody)'), { lyrics: false });
+      });
+    }
+
+    // 2. Jianpu 旋律 + 歌词
+    function initT1S2() {
+      renderInto('t1s2', el => {
+        renderJianpu(el, jianpuDataFromXml(true, 'Ode to Joy (lyrics)'), { lyrics: true });
+      });
+    }
+
+    // 3. Jianpu 旋律 + 歌词 + 和弦名
+    function initT1S3() {
+      renderInto('t1s3', el => {
+        const data = jianpuDataFromXml(true, 'Ode to Joy (chords)');
+        data.chords = ODE_CHORDS;
+        renderJianpu(el, data, { lyrics: true, showChords: true });
+      });
+    }
+
+    // 4. 五线谱
+    function initT1S4() {
+      renderInto('t1s4', el => {
+        renderStaff(el, combinedDataFromXml(false, 'Ode to Joy (staff)'), {});
+      });
+    }
+
+    // 5. 五线谱 + 简谱
+    function initT1S5() {
+      renderInto('t1s5', el => {
+        renderCombined(el, combinedDataFromXml(false, 'Ode to Joy (staff+jianpu)'), { lyrics: false });
+      });
+    }
+
+    // 6. 五线谱 + 简谱 + 歌词
+    function initT1S6() {
+      renderInto('t1s6', el => {
+        renderCombined(el, combinedDataFromXml(true, 'Ode to Joy (staff+jianpu+lyrics)'), { lyrics: true });
+      });
+    }
+
+    // 7. 吉他谱 TabStave
+    function initT1S7() {
+      renderInto('t1s7', el => {
+        const data = jianpuDataFromXml(false, 'Ode to Joy (tab)');
+        renderTab(el, { measures: buildTabMeasures(data), chords: ODE_CHORDS }, { showDiagrams: false });
+      });
+    }
+
+    // 8. 吉他谱 TabStave + 指法图
+    function initT1S8() {
+      renderInto('t1s8', el => {
+        const data = jianpuDataFromXml(false, 'Ode to Joy (tab+diagrams)');
+        renderTab(el, { measures: buildTabMeasures(data), chords: ODE_CHORDS }, { showDiagrams: true });
+      });
+    }
+
+    // 9. 吉他谱 TabStave + 简谱
+    function initT1S9() {
+      renderInto('t1s9', el => {
+        const data = jianpuDataFromXml(false, 'Ode to Joy (tab+jianpu)');
+        renderTabJianpu(el, { measures: buildTabMeasures(data), chords: ODE_CHORDS },
+          { showDiagrams: false, lyrics: false });
+      });
+    }
+
+    // 10. 吉他谱 TabStave + 简谱 + 指法图
+    function initT1S10() {
+      renderInto('t1s10', el => {
+        const data = jianpuDataFromXml(false, 'Ode to Joy (tab+jianpu+diagrams)');
+        renderTabJianpu(el, { measures: buildTabMeasures(data), chords: ODE_CHORDS },
+          { showDiagrams: true, lyrics: false });
+      });
+    }
+
+    // ── Tab 2: 简谱符号渲染 ─────────────────────────────────────
+    // Each case feeds a custom jianpu notation string through
+    // parseJianpuNotation() and renders it with renderJianpu().
+
+    function renderNotation(elId, notation) {
+      renderInto(elId, el => {
+        const fs = 16;
+        const data = parseJianpuNotation(notation, fs);
+        renderJianpu(el, data, {
+          lyrics: false,
+          digitFontSize: fs,
+          perLine: 3,
+          measureWidth: fs * 16,
+        });
+      });
+    }
+
+    // 1. 时值渲染：全音符 / 二分 / 四分 / 八分 / 十六分 / 附点 / 休止符 / 增时线
+    function initT2S1() {
+      renderNotation('t2s1',
+        '1 - - - | 3 - 5 - | 5 55 5 0 | 6666 5555 3 1 | '
+        + '5(8分浮点)5(16) 3(8分浮点)3(16) 1(8分浮点)1(16) 2(8分浮点)2(16) | '
+        + '2(4分浮点) 5(8) 1 -');
+    }
+
+    // 2. 八度渲染：低两个八度 → 高两个八度（尾随八度标记）
+    function initT2S2() {
+      renderNotation('t2s2',
+        '1低两个八度 2 3 4 | 5低八度 6 7 1 | 2无八度 3 4 5 | '
+        + '6高八度 7 1 2 | 3高两个八度 4 5 6 | 7无八度 1 - -');
+    }
+
+    // 3. 符号渲染：升降号 / 三连音 / 连线（含跨小节）/ 休止符
+    function initT2S3() {
+      renderNotation('t2s3',
+        '#4 5 b7 1 | 222(3连音) 567(3连音) 5 3 | 5连线开始 5连线结束 3 2 | '
+        + '1连线开始 - - - | 1连线结束 2 3 5 | 0 0 55 0');
+    }
+
+    // ── Initialize ──────────────────────────────────────────────
+    if (typeof VF === 'undefined') {
+      document.body.innerHTML += '<div class="err">VexFlow not loaded. Run grunt webpack:debug in external/vexflow/</div>';
+    } else if (typeof OSMD === 'undefined') {
+      document.body.innerHTML += '<div class="err">OSMD not loaded. Run: node node_modules/webpack/bin/webpack.js --config webpack.dev.js</div>';
+    } else {
+      initT1S1();
+      initT1S2();
+      initT1S3();
+      initT1S4();
+      initT1S5();
+      initT1S6();
+      initT1S7();
+      initT1S8();
+      initT1S9();
+      initT1S10();
+      initT2S1();
+      initT2S2();
+      initT2S3();
+    }
+  })();
+  </script>
+</body>
+</html>

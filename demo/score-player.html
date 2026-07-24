@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ScorePlayer Demo — Ode to Joy</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; background: #f5f5f5; }
+    h1 { color: #222; font-size: 22px; }
+    .subtitle { color: #666; font-size: 13px; margin-bottom: 16px; }
+    #player { max-width: 1100px; }
+  </style>
+</head>
+<body>
+  <h1>Ode to Joy</h1>
+  <div class="subtitle">Ludwig van Beethoven — ScorePlayer demo (data-only construction, widget from OSMD source)</div>
+  <div id="player"></div>
+
+  <script src="../build/opensheetmusicdisplay.js?v=20260724sp4"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    // ── Data construction helpers ───────────────────────────────
+
+    // Melody note: pitch + duration + optional lyrics/chord/dots/modifiers.
+    function N(step, octave, duration, extra) {
+      return Object.assign({
+        keys: [{ pitch: { step, octave, alter: 0 } }],
+        duration: duration,
+      }, extra || {});
+    }
+    function lyric(text) { return [{ verse: 1, text: text }]; }
+
+    // Standard tuning midi numbers (string 1 = high E … string 6 = low E).
+    const TUNING = { 1: 64, 2: 59, 3: 55, 4: 50, 5: 45, 6: 40 };
+    const SHARP_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    function stringFretToPitch(str, fret) {
+      const midi = TUNING[str] + fret;
+      const name = SHARP_NAMES[midi % 12];
+      return {
+        step: name[0],
+        octave: Math.floor(midi / 12) - 1,
+        alter: name.length > 1 ? 1 : 0,
+        accidental: name.length > 1 ? 'sharp' : undefined,
+      };
+    }
+
+    // Guitar chord shapes (sorted low string → high string).
+    const CHORD_SHAPES = {
+      C: [[5,3],[4,2],[3,0],[2,1],[1,0]],
+      F: [[6,1],[5,3],[4,3],[3,2],[2,1],[1,1]],
+      G: [[6,3],[5,2],[4,0],[3,0],[2,0],[1,3]],
+    };
+
+    // 8 eighth-note arpeggio (low → high → low) for one measure.
+    function arpeggio(chord) {
+      const shape = CHORD_SHAPES[chord];
+      const n = shape.length;
+      const idx = n >= 6 ? [0,1,2,3,4,5,4,3]
+               : n >= 5 ? [0,1,2,3,4,3,2,1]
+               : [0,1,2,3,2,3,2,1];
+      return idx.map((i, k) => {
+        const pos = shape[Math.min(i, n - 1)];
+        const str = pos[0], fret = pos[1];
+        const note = {
+          keys: [{ string: str, fret: fret, pitch: stringFretToPitch(str, fret) }],
+          duration: '8',
+        };
+        if (k === 0) note.chord = chord; // chord symbol on the first beat
+        return note;
+      });
+    }
+
+    // ── Score data ──────────────────────────────────────────────
+
+    // Chord progression: I – I – I – V | I – I – IV – I
+    const PROGRESSION = ['C','C','C','G','C','C','F','C'];
+
+    const melodyMeasures = [
+      { id: 1, notes: [N('E',4,'q',{lyrics:lyric('欢'),chord:'C'}), N('E',4,'q',{lyrics:lyric('乐')}),
+                       N('F',4,'q',{lyrics:lyric('女')}), N('G',4,'q',{lyrics:lyric('神')})] },
+      { id: 2, notes: [N('G',4,'q',{lyrics:lyric('圣'),chord:'C'}), N('F',4,'q',{lyrics:lyric('洁')}),
+                       N('E',4,'q',{lyrics:lyric('美')}), N('D',4,'q',{lyrics:lyric('丽')})] },
+      { id: 3, notes: [N('C',4,'q',{lyrics:lyric('灿'),chord:'C'}), N('C',4,'q',{lyrics:lyric('烂')}),
+                       N('D',4,'q',{lyrics:lyric('光')}), N('E',4,'q',{lyrics:lyric('芒')})] },
+      { id: 4, notes: [N('E',4,'q',{dots:1,lyrics:lyric('照'),chord:'G'}), N('D',4,'8',{lyrics:lyric('大')}),
+                       N('D',4,'h',{lyrics:lyric('地')})] },
+      { id: 5, notes: [N('E',4,'q',{lyrics:lyric('我'),chord:'C'}), N('E',4,'q',{lyrics:lyric('们')}),
+                       N('F',4,'q',{lyrics:lyric('心')}), N('G',4,'q',{lyrics:lyric('中')})] },
+      { id: 6, notes: [N('G',4,'q',{lyrics:lyric('充'),chord:'C'}), N('F',4,'q',{lyrics:lyric('满')}),
+                       N('E',4,'q',{lyrics:lyric('热')}), N('D',4,'q',{lyrics:lyric('情')})] },
+      { id: 7, notes: [N('C',4,'q',{lyrics:lyric('来'),chord:'F'}), N('C',4,'q',{lyrics:lyric('到')}),
+                       N('D',4,'q',{lyrics:lyric('你')}), N('E',4,'q',{lyrics:lyric('的')})] },
+      { id: 8, notes: [N('D',4,'q',{dots:1,lyrics:lyric('圣'),chord:'C'}), N('C',4,'8',{lyrics:lyric('殿')}),
+                       N('C',4,'h',{lyrics:lyric('里')})] },
+    ];
+
+    const scoreData = {
+      title: 'Ode to Joy',
+      authors: ['Ludwig van Beethoven'],
+      global: {
+        timeSignature: { beats: 4, beatType: 4 },
+        keySignature: { fifths: 0, mode: 'major' },
+        bpm: 120,
+      },
+      parts: [
+        {
+          id: 'p1',
+          name: 'Guitar',
+          notation: 'tab',
+          instrument: { id: 'guitar', volume: 0.8, pan: 0.0, reverb: 0.3 },
+          options: { showMeasureNumbers: true, showChords: true },
+          measures: PROGRESSION.map((chord, i) => ({ id: i + 1, notes: arpeggio(chord) })),
+        },
+        {
+          id: 'p2',
+          name: 'Melody',
+          notation: 'jianpu',
+          instrument: { id: 'piano', volume: 1.0, pan: 0.0, reverb: 0.2 },
+          options: { showMeasureNumbers: true, showChords: true },
+          measures: melodyMeasures,
+        },
+      ],
+    };
+
+    // ── Initialize ScorePlayer from OSMD source ────────────────
+
+    new opensheetmusicdisplay.ScorePlayer(document.getElementById('player'), scoreData, {
+      onPlaybackStateChange: function (state) { console.log('playback state:', state); },
+    });
+  })();
+  </script>
+</body>
+</html>
